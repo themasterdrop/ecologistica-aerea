@@ -1,0 +1,1324 @@
+{
+  "timestamp": "2026-06-18T22:51:18",
+  "backup": "RESULTADO_BACKUP_20260618_2250",
+  "aplico_B_fisico": true,
+  "aplico_A_foraneas": true,
+  "constantes": {
+    "K_CRUCERO": 0.03,
+    "K_LTO": 0.012,
+    "SIGMA_RUIDO": 0.1,
+    "FACTOR_CO2": 3.16
+  },
+  "antes": [
+    {
+      "Modelo": "B738",
+      "Vuelos": 35393,
+      "Fuel_Medio": 14294.900900414876,
+      "CO2_Medio": 45171.88684531101
+    },
+    {
+      "Modelo": "A320",
+      "Vuelos": 28225,
+      "Fuel_Medio": 14412.775132086315,
+      "CO2_Medio": 45544.36941739276
+    },
+    {
+      "Modelo": "A319",
+      "Vuelos": 14870,
+      "Fuel_Medio": 13580.803904686982,
+      "CO2_Medio": 42915.34033881087
+    },
+    {
+      "Modelo": "A321",
+      "Vuelos": 10606,
+      "Fuel_Medio": 16854.30469054182,
+      "CO2_Medio": 53259.602822112145
+    },
+    {
+      "Modelo": "CRJ2",
+      "Vuelos": 9262,
+      "Fuel_Medio": 3969.138527179784,
+      "CO2_Medio": 12542.477745888116
+    },
+    {
+      "Modelo": "B737",
+      "Vuelos": 6991,
+      "Fuel_Medio": 12899.854989110032,
+      "CO2_Medio": 40763.54176558771
+    },
+    {
+      "Modelo": "E75L",
+      "Vuelos": 5809,
+      "Fuel_Medio": 6929.003592337395,
+      "CO2_Medio": 21895.651351786168
+    },
+    {
+      "Modelo": "B752",
+      "Vuelos": 5553,
+      "Fuel_Medio": 20640.038095657852,
+      "CO2_Medio": 65222.52038227883
+    },
+    {
+      "Modelo": "A20N",
+      "Vuelos": 5356,
+      "Fuel_Medio": 13501.084955145912,
+      "CO2_Medio": 42663.428458261085
+    },
+    {
+      "Modelo": "CRJ7",
+      "Vuelos": 4895,
+      "Fuel_Medio": 5989.366524861437,
+      "CO2_Medio": 18926.398218562146
+    },
+    {
+      "Modelo": "CRJ9",
+      "Vuelos": 4859,
+      "Fuel_Medio": 6510.512073853135,
+      "CO2_Medio": 20573.218153375907
+    },
+    {
+      "Modelo": "E145",
+      "Vuelos": 4822,
+      "Fuel_Medio": 3888.541546857826,
+      "CO2_Medio": 12287.79128807073
+    },
+    {
+      "Modelo": "B763",
+      "Vuelos": 4527,
+      "Fuel_Medio": 33724.045109177234,
+      "CO2_Medio": 106567.98254500008
+    },
+    {
+      "Modelo": "B739",
+      "Vuelos": 4434,
+      "Fuel_Medio": 14591.73541006263,
+      "CO2_Medio": 46109.883895797895
+    },
+    {
+      "Modelo": "A332",
+      "Vuelos": 3569,
+      "Fuel_Medio": 43393.9868073309,
+      "CO2_Medio": 137124.99831116563
+    },
+    {
+      "Modelo": "B734",
+      "Vuelos": 3527,
+      "Fuel_Medio": 11900.867267328056,
+      "CO2_Medio": 37606.74056475666
+    },
+    {
+      "Modelo": "C208",
+      "Vuelos": 3203,
+      "Fuel_Medio": 323.50477910599824,
+      "CO2_Medio": 1022.2751019749545
+    },
+    {
+      "Modelo": "GL5T",
+      "Vuelos": 3031,
+      "Fuel_Medio": 7466.270768683456,
+      "CO2_Medio": 23593.415629039722
+    },
+    {
+      "Modelo": "E190",
+      "Vuelos": 2943,
+      "Fuel_Medio": 9349.876854381766,
+      "CO2_Medio": 29545.61085984639
+    },
+    {
+      "Modelo": "A333",
+      "Vuelos": 2741,
+      "Fuel_Medio": 43415.74038228853,
+      "CO2_Medio": 137193.73960803173
+    },
+    {
+      "Modelo": "C172",
+      "Vuelos": 2233,
+      "Fuel_Medio": 63.81029357764786,
+      "CO2_Medio": 201.6405277053673
+    },
+    {
+      "Modelo": "B772",
+      "Vuelos": 2220,
+      "Fuel_Medio": 48574.75329757333,
+      "CO2_Medio": 153496.22042033172
+    },
+    {
+      "Modelo": "PC12",
+      "Vuelos": 2210,
+      "Fuel_Medio": 383.21320309238433,
+      "CO2_Medio": 1210.9537217719349
+    },
+    {
+      "Modelo": "A21N",
+      "Vuelos": 2128,
+      "Fuel_Medio": 17128.45666303195,
+      "CO2_Medio": 54125.92305518097
+    },
+    {
+      "Modelo": "B77W",
+      "Vuelos": 1980,
+      "Fuel_Medio": 63810.2127004262,
+      "CO2_Medio": 201640.2721333468
+    },
+    {
+      "Modelo": "E170",
+      "Vuelos": 1876,
+      "Fuel_Medio": 7194.250001375392,
+      "CO2_Medio": 22733.830004346237
+    },
+    {
+      "Modelo": "B733",
+      "Vuelos": 1871,
+      "Fuel_Medio": 10820.218226704977,
+      "CO2_Medio": 34191.88959638773
+    },
+    {
+      "Modelo": "B788",
+      "Vuelos": 1840,
+      "Fuel_Medio": 38394.57543783643,
+      "CO2_Medio": 121326.85838356313
+    },
+    {
+      "Modelo": "CL30",
+      "Vuelos": 1793,
+      "Fuel_Medio": 3307.5300455580045,
+      "CO2_Medio": 10451.794943963296
+    },
+    {
+      "Modelo": "DH8D",
+      "Vuelos": 1756,
+      "Fuel_Medio": 2452.479275316805,
+      "CO2_Medio": 7749.834510001104
+    },
+    {
+      "Modelo": "B789",
+      "Vuelos": 1714,
+      "Fuel_Medio": 45981.94115314454,
+      "CO2_Medio": 145302.93404393672
+    },
+    {
+      "Modelo": "B712",
+      "Vuelos": 1648,
+      "Fuel_Medio": 10451.201237776986,
+      "CO2_Medio": 33025.79591137528
+    },
+    {
+      "Modelo": "E195",
+      "Vuelos": 1565,
+      "Fuel_Medio": 8073.453243169637,
+      "CO2_Medio": 25512.11224841605
+    },
+    {
+      "Modelo": "CL60",
+      "Vuelos": 1527,
+      "Fuel_Medio": 3503.3765038878814,
+      "CO2_Medio": 11070.669752285707
+    },
+    {
+      "Modelo": "B744",
+      "Vuelos": 1517,
+      "Fuel_Medio": 71666.81715732464,
+      "CO2_Medio": 226467.14221714583
+    },
+    {
+      "Modelo": "B38M",
+      "Vuelos": 1369,
+      "Fuel_Medio": 14797.58228254175,
+      "CO2_Medio": 46760.36001283194
+    },
+    {
+      "Modelo": "B735",
+      "Vuelos": 1136,
+      "Fuel_Medio": 11079.38867433129,
+      "CO2_Medio": 35010.868210886874
+    },
+    {
+      "Modelo": "SF34",
+      "Vuelos": 1113,
+      "Fuel_Medio": 1005.3425644941334,
+      "CO2_Medio": 3176.8825038014616
+    },
+    {
+      "Modelo": "B190",
+      "Vuelos": 1060,
+      "Fuel_Medio": 644.4454651591611,
+      "CO2_Medio": 2036.447669902949
+    },
+    {
+      "Modelo": "C500",
+      "Vuelos": 1037,
+      "Fuel_Medio": 936.028744105852,
+      "CO2_Medio": 2957.850831374493
+    },
+    {
+      "Modelo": "MD87",
+      "Vuelos": 1024,
+      "Fuel_Medio": 10999.475166201235,
+      "CO2_Medio": 34758.34152519591
+    },
+    {
+      "Modelo": "PA31",
+      "Vuelos": 1015,
+      "Fuel_Medio": 149.2759773182133,
+      "CO2_Medio": 471.712088325554
+    },
+    {
+      "Modelo": "B77L",
+      "Vuelos": 955,
+      "Fuel_Medio": 60428.83078569151,
+      "CO2_Medio": 190955.1052827852
+    },
+    {
+      "Modelo": "A343",
+      "Vuelos": 940,
+      "Fuel_Medio": 48204.85421736051,
+      "CO2_Medio": 152327.33932685922
+    },
+    {
+      "Modelo": "C56X",
+      "Vuelos": 855,
+      "Fuel_Medio": 1671.1115694593577,
+      "CO2_Medio": 5280.712559491571
+    },
+    {
+      "Modelo": "CRJX",
+      "Vuelos": 727,
+      "Fuel_Medio": 4441.377572908661,
+      "CO2_Medio": 14034.753130391367
+    },
+    {
+      "Modelo": "AT72",
+      "Vuelos": 701,
+      "Fuel_Medio": 1564.7245081194462,
+      "CO2_Medio": 4944.529445657449
+    },
+    {
+      "Modelo": "PA32",
+      "Vuelos": 701,
+      "Fuel_Medio": 87.70152460729392,
+      "CO2_Medio": 277.1368177590488
+    },
+    {
+      "Modelo": "AT76",
+      "Vuelos": 640,
+      "Fuel_Medio": 1816.6350807876872,
+      "CO2_Medio": 5740.566855289092
+    },
+    {
+      "Modelo": "B736",
+      "Vuelos": 621,
+      "Fuel_Medio": 11634.449384327538,
+      "CO2_Medio": 36764.86005447502
+    },
+    {
+      "Modelo": "AT75",
+      "Vuelos": 595,
+      "Fuel_Medio": 1982.4325439225072,
+      "CO2_Medio": 6264.486838795123
+    },
+    {
+      "Modelo": "A359",
+      "Vuelos": 571,
+      "Fuel_Medio": 46703.81441998587,
+      "CO2_Medio": 147584.05356715538
+    },
+    {
+      "Modelo": "GLEX",
+      "Vuelos": 546,
+      "Fuel_Medio": 8178.9980631151675,
+      "CO2_Medio": 25845.63387944393
+    },
+    {
+      "Modelo": "E135",
+      "Vuelos": 530,
+      "Fuel_Medio": 3615.726605636422,
+      "CO2_Medio": 11425.696073811094
+    },
+    {
+      "Modelo": "A388",
+      "Vuelos": 524,
+      "Fuel_Medio": 101783.78007036015,
+      "CO2_Medio": 321636.7450223382
+    },
+    {
+      "Modelo": "B753",
+      "Vuelos": 498,
+      "Fuel_Medio": 24095.49755237289,
+      "CO2_Medio": 76141.77226549832
+    },
+    {
+      "Modelo": "FA7X",
+      "Vuelos": 470,
+      "Fuel_Medio": 5742.024555455437,
+      "CO2_Medio": 18144.797595239186
+    },
+    {
+      "Modelo": "DH8A",
+      "Vuelos": 457,
+      "Fuel_Medio": 1285.367552627601,
+      "CO2_Medio": 4061.761466303219
+    },
+    {
+      "Modelo": "RJ85",
+      "Vuelos": 453,
+      "Fuel_Medio": 7460.885631732413,
+      "CO2_Medio": 23576.398596274423
+    },
+    {
+      "Modelo": "A346",
+      "Vuelos": 447,
+      "Fuel_Medio": 67746.9551229123,
+      "CO2_Medio": 214080.3781884029
+    },
+    {
+      "Modelo": "ZZZ",
+      "Vuelos": 441,
+      "Fuel_Medio": 75289.40191468305,
+      "CO2_Medio": 237914.51005099676
+    },
+    {
+      "Modelo": "DHC2",
+      "Vuelos": 426,
+      "Fuel_Medio": 125.39745584439213,
+      "CO2_Medio": 396.25596046827906
+    },
+    {
+      "Modelo": "F900",
+      "Vuelos": 425,
+      "Fuel_Medio": 4166.649591729685,
+      "CO2_Medio": 13166.612709865805
+    },
+    {
+      "Modelo": "GALX",
+      "Vuelos": 376,
+      "Fuel_Medio": 2671.13898813436,
+      "CO2_Medio": 8440.799202504579
+    },
+    {
+      "Modelo": "RJ1H",
+      "Vuelos": 373,
+      "Fuel_Medio": 8908.830311123551,
+      "CO2_Medio": 28151.903783150417
+    },
+    {
+      "Modelo": "BCS3",
+      "Vuelos": 368,
+      "Fuel_Medio": 13309.012517179079,
+      "CO2_Medio": 42056.47955428589
+    },
+    {
+      "Modelo": "E75S",
+      "Vuelos": 363,
+      "Fuel_Medio": 6490.543389928514,
+      "CO2_Medio": 20510.117112174106
+    },
+    {
+      "Modelo": "MD90",
+      "Vuelos": 340,
+      "Fuel_Medio": 13051.233532172426,
+      "CO2_Medio": 41241.897961664865
+    },
+    {
+      "Modelo": "GA5C",
+      "Vuelos": 338,
+      "Fuel_Medio": 6183.618505200024,
+      "CO2_Medio": 19540.234476432077
+    },
+    {
+      "Modelo": "H25B",
+      "Vuelos": 332,
+      "Fuel_Medio": 1974.7796221490928,
+      "CO2_Medio": 6240.303605991132
+    },
+    {
+      "Modelo": "F2TH",
+      "Vuelos": 327,
+      "Fuel_Medio": 3258.2594060743468,
+      "CO2_Medio": 10296.099723194935
+    },
+    {
+      "Modelo": "DHC6",
+      "Vuelos": 301,
+      "Fuel_Medio": 370.2924745144793,
+      "CO2_Medio": 1170.1242194657543
+    },
+    {
+      "Modelo": "B748",
+      "Vuelos": 297,
+      "Fuel_Medio": 78958.53538592519,
+      "CO2_Medio": 249508.9718195236
+    },
+    {
+      "Modelo": "GA8",
+      "Vuelos": 288,
+      "Fuel_Medio": 90.35988931344247,
+      "CO2_Medio": 285.5372502304782
+    },
+    {
+      "Modelo": "B764",
+      "Vuelos": 260,
+      "Fuel_Medio": 37166.63787854359,
+      "CO2_Medio": 117446.57569619776
+    },
+    {
+      "Modelo": "LJ45",
+      "Vuelos": 252,
+      "Fuel_Medio": 1686.1165200724931,
+      "CO2_Medio": 5328.128203429079
+    },
+    {
+      "Modelo": "BE20",
+      "Vuelos": 247,
+      "Fuel_Medio": 529.3297329775411,
+      "CO2_Medio": 1672.6819562090297
+    },
+    {
+      "Modelo": "BE40",
+      "Vuelos": 238,
+      "Fuel_Medio": 1274.060075801443,
+      "CO2_Medio": 4026.0298395325603
+    },
+    {
+      "Modelo": "B732",
+      "Vuelos": 231,
+      "Fuel_Medio": 9173.144955698384,
+      "CO2_Medio": 28987.1380600069
+    },
+    {
+      "Modelo": "DHC3",
+      "Vuelos": 229,
+      "Fuel_Medio": 188.53055881145198,
+      "CO2_Medio": 595.7565658441882
+    },
+    {
+      "Modelo": "T37",
+      "Vuelos": 220,
+      "Fuel_Medio": 526.6398607431557,
+      "CO2_Medio": 1664.181959948372
+    },
+    {
+      "Modelo": "A318",
+      "Vuelos": 210,
+      "Fuel_Medio": 13748.163410345873,
+      "CO2_Medio": 43444.196376692955
+    },
+    {
+      "Modelo": "LJ75",
+      "Vuelos": 204,
+      "Fuel_Medio": 1788.0612444949597,
+      "CO2_Medio": 5650.273532604074
+    },
+    {
+      "Modelo": "AT45",
+      "Vuelos": 189,
+      "Fuel_Medio": 1705.4562529600241,
+      "CO2_Medio": 5389.241759353677
+    },
+    {
+      "Modelo": "AT43",
+      "Vuelos": 186,
+      "Fuel_Medio": 1585.350132225348,
+      "CO2_Medio": 5009.706417832099
+    },
+    {
+      "Modelo": "GLF6",
+      "Vuelos": 181,
+      "Fuel_Medio": 9174.308273373892,
+      "CO2_Medio": 28990.8141438615
+    },
+    {
+      "Modelo": "A310",
+      "Vuelos": 180,
+      "Fuel_Medio": 21894.200689991034,
+      "CO2_Medio": 69185.67418037167
+    },
+    {
+      "Modelo": "B762",
+      "Vuelos": 176,
+      "Fuel_Medio": 24666.442356936754,
+      "CO2_Medio": 77945.95784792014
+    },
+    {
+      "Modelo": "B350",
+      "Vuelos": 167,
+      "Fuel_Medio": 471.1606010671677,
+      "CO2_Medio": 1488.8674993722502
+    },
+    {
+      "Modelo": "A139",
+      "Vuelos": 152,
+      "Fuel_Medio": 685.9398684702401,
+      "CO2_Medio": 2167.5699843659586
+    },
+    {
+      "Modelo": "C212",
+      "Vuelos": 143,
+      "Fuel_Medio": 389.9233730955638,
+      "CO2_Medio": 1232.1578589819817
+    },
+    {
+      "Modelo": "DH8C",
+      "Vuelos": 141,
+      "Fuel_Medio": 1605.7678979361174,
+      "CO2_Medio": 5074.226557478131
+    },
+    {
+      "Modelo": "A306",
+      "Vuelos": 137,
+      "Fuel_Medio": 36948.66130200094,
+      "CO2_Medio": 116757.76971432297
+    },
+    {
+      "Modelo": "G150",
+      "Vuelos": 125,
+      "Fuel_Medio": 2125.521809110595,
+      "CO2_Medio": 6716.64891678948
+    },
+    {
+      "Modelo": "BN2P",
+      "Vuelos": 108,
+      "Fuel_Medio": 175.50266287306425,
+      "CO2_Medio": 554.588414678883
+    },
+    {
+      "Modelo": "BCS1",
+      "Vuelos": 100,
+      "Fuel_Medio": 11603.644220034632,
+      "CO2_Medio": 36667.51573530944
+    },
+    {
+      "Modelo": "C402",
+      "Vuelos": 99,
+      "Fuel_Medio": 128.7647309570585,
+      "CO2_Medio": 406.8965498243049
+    },
+    {
+      "Modelo": "SU95",
+      "Vuelos": 93,
+      "Fuel_Medio": 6431.1524503098435,
+      "CO2_Medio": 20322.441742979106
+    },
+    {
+      "Modelo": "BE35",
+      "Vuelos": 91,
+      "Fuel_Medio": 67.31913038166847,
+      "CO2_Medio": 212.72845200607236
+    },
+    {
+      "Modelo": "B74R",
+      "Vuelos": 91,
+      "Fuel_Medio": 46036.83102255262,
+      "CO2_Medio": 145476.38603126627
+    },
+    {
+      "Modelo": "DH8B",
+      "Vuelos": 81,
+      "Fuel_Medio": 1618.2334516043923,
+      "CO2_Medio": 5113.6177070698795
+    },
+    {
+      "Modelo": "TBM9",
+      "Vuelos": 77,
+      "Fuel_Medio": 280.49198659557806,
+      "CO2_Medio": 886.3546776420266
+    },
+    {
+      "Modelo": "F100",
+      "Vuelos": 74,
+      "Fuel_Medio": 7532.631210994409,
+      "CO2_Medio": 23803.114626742343
+    },
+    {
+      "Modelo": "CRJ1",
+      "Vuelos": 73,
+      "Fuel_Medio": 3996.2263779394384,
+      "CO2_Medio": 12628.075354288623
+    },
+    {
+      "Modelo": "LJ60",
+      "Vuelos": 70,
+      "Fuel_Medio": 2148.849506549162,
+      "CO2_Medio": 6790.364440695353
+    },
+    {
+      "Modelo": "C180",
+      "Vuelos": 61,
+      "Fuel_Medio": 59.42559309327711,
+      "CO2_Medio": 187.78487417475563
+    },
+    {
+      "Modelo": "FA8X",
+      "Vuelos": 50,
+      "Fuel_Medio": 8420.552417818488,
+      "CO2_Medio": 26608.94564030642
+    },
+    {
+      "Modelo": "GLF4",
+      "Vuelos": 50,
+      "Fuel_Medio": 4954.617286816821,
+      "CO2_Medio": 15656.590626341158
+    },
+    {
+      "Modelo": "J328",
+      "Vuelos": 50,
+      "Fuel_Medio": 3290.9413382207913,
+      "CO2_Medio": 10399.3746287777
+    }
+  ],
+  "despues": [
+    {
+      "Modelo": "B738",
+      "Vuelos": 35393,
+      "Fuel_Medio": 14294.900900414881,
+      "CO2_Medio": 45171.886845311004
+    },
+    {
+      "Modelo": "A320",
+      "Vuelos": 28225,
+      "Fuel_Medio": 14412.775132086317,
+      "CO2_Medio": 45544.36941739275
+    },
+    {
+      "Modelo": "A319",
+      "Vuelos": 14870,
+      "Fuel_Medio": 13580.80390468698,
+      "CO2_Medio": 42915.340338810856
+    },
+    {
+      "Modelo": "A321",
+      "Vuelos": 10606,
+      "Fuel_Medio": 16854.30469054181,
+      "CO2_Medio": 53259.602822112145
+    },
+    {
+      "Modelo": "CRJ2",
+      "Vuelos": 9262,
+      "Fuel_Medio": 3969.138527179785,
+      "CO2_Medio": 12542.477745888116
+    },
+    {
+      "Modelo": "B737",
+      "Vuelos": 6991,
+      "Fuel_Medio": 12899.854989110036,
+      "CO2_Medio": 40763.54176558771
+    },
+    {
+      "Modelo": "E75L",
+      "Vuelos": 5809,
+      "Fuel_Medio": 6929.003592337398,
+      "CO2_Medio": 21895.651351786168
+    },
+    {
+      "Modelo": "B752",
+      "Vuelos": 5553,
+      "Fuel_Medio": 20640.038095657856,
+      "CO2_Medio": 65222.52038227883
+    },
+    {
+      "Modelo": "A20N",
+      "Vuelos": 5356,
+      "Fuel_Medio": 13501.084955145912,
+      "CO2_Medio": 42663.42845826108
+    },
+    {
+      "Modelo": "CRJ7",
+      "Vuelos": 4895,
+      "Fuel_Medio": 5989.366524861437,
+      "CO2_Medio": 18926.39821856215
+    },
+    {
+      "Modelo": "CRJ9",
+      "Vuelos": 4859,
+      "Fuel_Medio": 6510.512073853135,
+      "CO2_Medio": 20573.218153375914
+    },
+    {
+      "Modelo": "E145",
+      "Vuelos": 4822,
+      "Fuel_Medio": 3888.541546857826,
+      "CO2_Medio": 12287.79128807073
+    },
+    {
+      "Modelo": "B763",
+      "Vuelos": 4527,
+      "Fuel_Medio": 33724.045109177234,
+      "CO2_Medio": 106567.98254500008
+    },
+    {
+      "Modelo": "B739",
+      "Vuelos": 4434,
+      "Fuel_Medio": 14591.735410062629,
+      "CO2_Medio": 46109.8838957979
+    },
+    {
+      "Modelo": "A332",
+      "Vuelos": 3569,
+      "Fuel_Medio": 43393.986807330904,
+      "CO2_Medio": 137124.99831116566
+    },
+    {
+      "Modelo": "B734",
+      "Vuelos": 3527,
+      "Fuel_Medio": 11900.867267328056,
+      "CO2_Medio": 37606.74056475666
+    },
+    {
+      "Modelo": "C208",
+      "Vuelos": 3203,
+      "Fuel_Medio": 323.50477910599824,
+      "CO2_Medio": 1022.2751019749545
+    },
+    {
+      "Modelo": "GL5T",
+      "Vuelos": 3031,
+      "Fuel_Medio": 7466.2707686834565,
+      "CO2_Medio": 23593.415629039726
+    },
+    {
+      "Modelo": "E190",
+      "Vuelos": 2943,
+      "Fuel_Medio": 9349.876854381766,
+      "CO2_Medio": 29545.61085984639
+    },
+    {
+      "Modelo": "A333",
+      "Vuelos": 2741,
+      "Fuel_Medio": 43415.740382288524,
+      "CO2_Medio": 137193.73960803173
+    },
+    {
+      "Modelo": "C172",
+      "Vuelos": 2233,
+      "Fuel_Medio": 63.81029357764786,
+      "CO2_Medio": 201.6405277053673
+    },
+    {
+      "Modelo": "B772",
+      "Vuelos": 2220,
+      "Fuel_Medio": 48574.75329757333,
+      "CO2_Medio": 153496.22042033172
+    },
+    {
+      "Modelo": "PC12",
+      "Vuelos": 2210,
+      "Fuel_Medio": 383.2132030923844,
+      "CO2_Medio": 1210.9537217719346
+    },
+    {
+      "Modelo": "A21N",
+      "Vuelos": 2128,
+      "Fuel_Medio": 17128.45666303195,
+      "CO2_Medio": 54125.923055180974
+    },
+    {
+      "Modelo": "B77W",
+      "Vuelos": 1980,
+      "Fuel_Medio": 63810.212700426186,
+      "CO2_Medio": 201640.27213334676
+    },
+    {
+      "Modelo": "E170",
+      "Vuelos": 1876,
+      "Fuel_Medio": 7194.2500013753925,
+      "CO2_Medio": 22733.830004346237
+    },
+    {
+      "Modelo": "B733",
+      "Vuelos": 1871,
+      "Fuel_Medio": 10820.218226704976,
+      "CO2_Medio": 34191.88959638773
+    },
+    {
+      "Modelo": "B788",
+      "Vuelos": 1840,
+      "Fuel_Medio": 38394.57543783643,
+      "CO2_Medio": 121326.85838356313
+    },
+    {
+      "Modelo": "CL30",
+      "Vuelos": 1793,
+      "Fuel_Medio": 3307.5300455580045,
+      "CO2_Medio": 10451.794943963296
+    },
+    {
+      "Modelo": "DH8D",
+      "Vuelos": 1756,
+      "Fuel_Medio": 2452.479275316805,
+      "CO2_Medio": 7749.834510001104
+    },
+    {
+      "Modelo": "B789",
+      "Vuelos": 1714,
+      "Fuel_Medio": 45981.94115314453,
+      "CO2_Medio": 145302.93404393672
+    },
+    {
+      "Modelo": "B712",
+      "Vuelos": 1648,
+      "Fuel_Medio": 10451.201237776986,
+      "CO2_Medio": 33025.79591137528
+    },
+    {
+      "Modelo": "E195",
+      "Vuelos": 1565,
+      "Fuel_Medio": 8073.453243169636,
+      "CO2_Medio": 25512.11224841605
+    },
+    {
+      "Modelo": "CL60",
+      "Vuelos": 1527,
+      "Fuel_Medio": 3503.376503887882,
+      "CO2_Medio": 11070.669752285707
+    },
+    {
+      "Modelo": "B744",
+      "Vuelos": 1517,
+      "Fuel_Medio": 71666.81715732464,
+      "CO2_Medio": 226467.14221714588
+    },
+    {
+      "Modelo": "B38M",
+      "Vuelos": 1369,
+      "Fuel_Medio": 14797.58228254175,
+      "CO2_Medio": 46760.36001283194
+    },
+    {
+      "Modelo": "B735",
+      "Vuelos": 1136,
+      "Fuel_Medio": 11079.388674331289,
+      "CO2_Medio": 35010.868210886874
+    },
+    {
+      "Modelo": "SF34",
+      "Vuelos": 1113,
+      "Fuel_Medio": 1005.3425644941332,
+      "CO2_Medio": 3176.8825038014616
+    },
+    {
+      "Modelo": "B190",
+      "Vuelos": 1060,
+      "Fuel_Medio": 644.4454651591611,
+      "CO2_Medio": 2036.447669902949
+    },
+    {
+      "Modelo": "C500",
+      "Vuelos": 1037,
+      "Fuel_Medio": 936.0287441058521,
+      "CO2_Medio": 2957.8508313744924
+    },
+    {
+      "Modelo": "MD87",
+      "Vuelos": 1024,
+      "Fuel_Medio": 10999.475166201235,
+      "CO2_Medio": 34758.34152519591
+    },
+    {
+      "Modelo": "PA31",
+      "Vuelos": 1015,
+      "Fuel_Medio": 149.27597731821328,
+      "CO2_Medio": 471.71208832555396
+    },
+    {
+      "Modelo": "B77L",
+      "Vuelos": 955,
+      "Fuel_Medio": 60428.83078569151,
+      "CO2_Medio": 190955.1052827852
+    },
+    {
+      "Modelo": "A343",
+      "Vuelos": 940,
+      "Fuel_Medio": 48204.8542173605,
+      "CO2_Medio": 152327.33932685922
+    },
+    {
+      "Modelo": "C56X",
+      "Vuelos": 855,
+      "Fuel_Medio": 1671.1115694593575,
+      "CO2_Medio": 5280.712559491571
+    },
+    {
+      "Modelo": "CRJX",
+      "Vuelos": 727,
+      "Fuel_Medio": 4441.37757290866,
+      "CO2_Medio": 14034.753130391366
+    },
+    {
+      "Modelo": "AT72",
+      "Vuelos": 701,
+      "Fuel_Medio": 1564.7245081194462,
+      "CO2_Medio": 4944.529445657449
+    },
+    {
+      "Modelo": "PA32",
+      "Vuelos": 701,
+      "Fuel_Medio": 87.70152460729392,
+      "CO2_Medio": 277.1368177590488
+    },
+    {
+      "Modelo": "AT76",
+      "Vuelos": 640,
+      "Fuel_Medio": 1816.6350807876872,
+      "CO2_Medio": 5740.566855289091
+    },
+    {
+      "Modelo": "B736",
+      "Vuelos": 621,
+      "Fuel_Medio": 11634.449384327538,
+      "CO2_Medio": 36764.86005447502
+    },
+    {
+      "Modelo": "AT75",
+      "Vuelos": 595,
+      "Fuel_Medio": 1982.4325439225072,
+      "CO2_Medio": 6264.486838795121
+    },
+    {
+      "Modelo": "A359",
+      "Vuelos": 571,
+      "Fuel_Medio": 46703.81441998587,
+      "CO2_Medio": 147584.05356715538
+    },
+    {
+      "Modelo": "GLEX",
+      "Vuelos": 546,
+      "Fuel_Medio": 8178.998063115166,
+      "CO2_Medio": 25845.633879443933
+    },
+    {
+      "Modelo": "E135",
+      "Vuelos": 530,
+      "Fuel_Medio": 3615.726605636422,
+      "CO2_Medio": 11425.696073811094
+    },
+    {
+      "Modelo": "A388",
+      "Vuelos": 524,
+      "Fuel_Medio": 101783.78007036017,
+      "CO2_Medio": 321636.74502233806
+    },
+    {
+      "Modelo": "B753",
+      "Vuelos": 498,
+      "Fuel_Medio": 24095.49755237289,
+      "CO2_Medio": 76141.77226549832
+    },
+    {
+      "Modelo": "FA7X",
+      "Vuelos": 470,
+      "Fuel_Medio": 5742.024555455437,
+      "CO2_Medio": 18144.797595239186
+    },
+    {
+      "Modelo": "DH8A",
+      "Vuelos": 457,
+      "Fuel_Medio": 1285.367552627601,
+      "CO2_Medio": 4061.761466303219
+    },
+    {
+      "Modelo": "RJ85",
+      "Vuelos": 453,
+      "Fuel_Medio": 7460.885631732412,
+      "CO2_Medio": 23576.398596274423
+    },
+    {
+      "Modelo": "A346",
+      "Vuelos": 447,
+      "Fuel_Medio": 67746.9551229123,
+      "CO2_Medio": 214080.37818840286
+    },
+    {
+      "Modelo": "ZZZ",
+      "Vuelos": 441,
+      "Fuel_Medio": 75289.40191468307,
+      "CO2_Medio": 237914.51005099676
+    },
+    {
+      "Modelo": "DHC2",
+      "Vuelos": 426,
+      "Fuel_Medio": 125.39745584439211,
+      "CO2_Medio": 396.2559604682791
+    },
+    {
+      "Modelo": "F900",
+      "Vuelos": 425,
+      "Fuel_Medio": 4166.649591729683,
+      "CO2_Medio": 13166.612709865802
+    },
+    {
+      "Modelo": "GALX",
+      "Vuelos": 376,
+      "Fuel_Medio": 2671.1389881343594,
+      "CO2_Medio": 8440.799202504577
+    },
+    {
+      "Modelo": "RJ1H",
+      "Vuelos": 373,
+      "Fuel_Medio": 8908.83031112355,
+      "CO2_Medio": 28151.90378315041
+    },
+    {
+      "Modelo": "BCS3",
+      "Vuelos": 368,
+      "Fuel_Medio": 13309.012517179079,
+      "CO2_Medio": 42056.4795542859
+    },
+    {
+      "Modelo": "E75S",
+      "Vuelos": 363,
+      "Fuel_Medio": 6490.543389928514,
+      "CO2_Medio": 20510.117112174106
+    },
+    {
+      "Modelo": "MD90",
+      "Vuelos": 340,
+      "Fuel_Medio": 13051.233532172426,
+      "CO2_Medio": 41241.897961664865
+    },
+    {
+      "Modelo": "GA5C",
+      "Vuelos": 338,
+      "Fuel_Medio": 6183.618505200024,
+      "CO2_Medio": 19540.234476432077
+    },
+    {
+      "Modelo": "H25B",
+      "Vuelos": 332,
+      "Fuel_Medio": 1974.7796221490923,
+      "CO2_Medio": 6240.303605991133
+    },
+    {
+      "Modelo": "F2TH",
+      "Vuelos": 327,
+      "Fuel_Medio": 3258.2594060743468,
+      "CO2_Medio": 10296.099723194937
+    },
+    {
+      "Modelo": "DHC6",
+      "Vuelos": 301,
+      "Fuel_Medio": 370.29247451447924,
+      "CO2_Medio": 1170.1242194657543
+    },
+    {
+      "Modelo": "B748",
+      "Vuelos": 297,
+      "Fuel_Medio": 78958.5353859252,
+      "CO2_Medio": 249508.9718195236
+    },
+    {
+      "Modelo": "GA8",
+      "Vuelos": 288,
+      "Fuel_Medio": 90.35988931344247,
+      "CO2_Medio": 285.5372502304782
+    },
+    {
+      "Modelo": "B764",
+      "Vuelos": 260,
+      "Fuel_Medio": 37166.63787854359,
+      "CO2_Medio": 117446.57569619777
+    },
+    {
+      "Modelo": "LJ45",
+      "Vuelos": 252,
+      "Fuel_Medio": 1686.1165200724934,
+      "CO2_Medio": 5328.128203429079
+    },
+    {
+      "Modelo": "BE20",
+      "Vuelos": 247,
+      "Fuel_Medio": 529.329732977541,
+      "CO2_Medio": 1672.6819562090295
+    },
+    {
+      "Modelo": "BE40",
+      "Vuelos": 238,
+      "Fuel_Medio": 1274.060075801443,
+      "CO2_Medio": 4026.0298395325603
+    },
+    {
+      "Modelo": "B732",
+      "Vuelos": 231,
+      "Fuel_Medio": 9173.144955698384,
+      "CO2_Medio": 28987.138060006902
+    },
+    {
+      "Modelo": "DHC3",
+      "Vuelos": 229,
+      "Fuel_Medio": 188.53055881145195,
+      "CO2_Medio": 595.7565658441883
+    },
+    {
+      "Modelo": "T37",
+      "Vuelos": 220,
+      "Fuel_Medio": 526.6398607431557,
+      "CO2_Medio": 1664.181959948372
+    },
+    {
+      "Modelo": "A318",
+      "Vuelos": 210,
+      "Fuel_Medio": 13748.163410345873,
+      "CO2_Medio": 43444.196376692955
+    },
+    {
+      "Modelo": "LJ75",
+      "Vuelos": 204,
+      "Fuel_Medio": 1788.0612444949602,
+      "CO2_Medio": 5650.273532604074
+    },
+    {
+      "Modelo": "AT45",
+      "Vuelos": 189,
+      "Fuel_Medio": 1705.4562529600244,
+      "CO2_Medio": 5389.241759353677
+    },
+    {
+      "Modelo": "AT43",
+      "Vuelos": 186,
+      "Fuel_Medio": 1585.3501322253476,
+      "CO2_Medio": 5009.706417832099
+    },
+    {
+      "Modelo": "GLF6",
+      "Vuelos": 181,
+      "Fuel_Medio": 9174.308273373894,
+      "CO2_Medio": 28990.814143861495
+    },
+    {
+      "Modelo": "A310",
+      "Vuelos": 180,
+      "Fuel_Medio": 21894.20068999103,
+      "CO2_Medio": 69185.67418037167
+    },
+    {
+      "Modelo": "B762",
+      "Vuelos": 176,
+      "Fuel_Medio": 24666.44235693676,
+      "CO2_Medio": 77945.95784792014
+    },
+    {
+      "Modelo": "B350",
+      "Vuelos": 167,
+      "Fuel_Medio": 471.1606010671677,
+      "CO2_Medio": 1488.8674993722504
+    },
+    {
+      "Modelo": "A139",
+      "Vuelos": 152,
+      "Fuel_Medio": 685.9398684702401,
+      "CO2_Medio": 2167.5699843659586
+    },
+    {
+      "Modelo": "C212",
+      "Vuelos": 143,
+      "Fuel_Medio": 389.9233730955638,
+      "CO2_Medio": 1232.1578589819817
+    },
+    {
+      "Modelo": "DH8C",
+      "Vuelos": 141,
+      "Fuel_Medio": 1605.7678979361176,
+      "CO2_Medio": 5074.226557478132
+    },
+    {
+      "Modelo": "A306",
+      "Vuelos": 137,
+      "Fuel_Medio": 36948.66130200094,
+      "CO2_Medio": 116757.76971432297
+    },
+    {
+      "Modelo": "G150",
+      "Vuelos": 125,
+      "Fuel_Medio": 2125.521809110595,
+      "CO2_Medio": 6716.6489167894815
+    },
+    {
+      "Modelo": "BN2P",
+      "Vuelos": 108,
+      "Fuel_Medio": 175.50266287306422,
+      "CO2_Medio": 554.5884146788829
+    },
+    {
+      "Modelo": "BCS1",
+      "Vuelos": 100,
+      "Fuel_Medio": 11603.644220034632,
+      "CO2_Medio": 36667.51573530944
+    },
+    {
+      "Modelo": "C402",
+      "Vuelos": 99,
+      "Fuel_Medio": 128.7647309570585,
+      "CO2_Medio": 406.8965498243048
+    },
+    {
+      "Modelo": "SU95",
+      "Vuelos": 93,
+      "Fuel_Medio": 6431.152450309844,
+      "CO2_Medio": 20322.441742979106
+    },
+    {
+      "Modelo": "B74R",
+      "Vuelos": 91,
+      "Fuel_Medio": 46036.83102255262,
+      "CO2_Medio": 145476.3860312663
+    },
+    {
+      "Modelo": "BE35",
+      "Vuelos": 91,
+      "Fuel_Medio": 67.31913038166846,
+      "CO2_Medio": 212.72845200607236
+    },
+    {
+      "Modelo": "DH8B",
+      "Vuelos": 81,
+      "Fuel_Medio": 1618.2334516043918,
+      "CO2_Medio": 5113.617707069879
+    },
+    {
+      "Modelo": "TBM9",
+      "Vuelos": 77,
+      "Fuel_Medio": 280.49198659557806,
+      "CO2_Medio": 886.3546776420266
+    },
+    {
+      "Modelo": "F100",
+      "Vuelos": 74,
+      "Fuel_Medio": 7532.631210994411,
+      "CO2_Medio": 23803.11462674234
+    },
+    {
+      "Modelo": "CRJ1",
+      "Vuelos": 73,
+      "Fuel_Medio": 3996.2263779394384,
+      "CO2_Medio": 12628.075354288625
+    },
+    {
+      "Modelo": "LJ60",
+      "Vuelos": 70,
+      "Fuel_Medio": 2148.8495065491625,
+      "CO2_Medio": 6790.3644406953545
+    },
+    {
+      "Modelo": "C180",
+      "Vuelos": 61,
+      "Fuel_Medio": 59.425593093277094,
+      "CO2_Medio": 187.7848741747556
+    },
+    {
+      "Modelo": "J328",
+      "Vuelos": 50,
+      "Fuel_Medio": 3290.9413382207904,
+      "CO2_Medio": 10399.374628777701
+    },
+    {
+      "Modelo": "GLF4",
+      "Vuelos": 50,
+      "Fuel_Medio": 4954.617286816821,
+      "CO2_Medio": 15656.590626341156
+    },
+    {
+      "Modelo": "FA8X",
+      "Vuelos": 50,
+      "Fuel_Medio": 8420.552417818486,
+      "CO2_Medio": 26608.945640306425
+    }
+  ]
+}

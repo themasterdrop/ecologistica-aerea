@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+unsloth_compiled_cache/
+
+# Pesos y artefactos de entrenamiento (demasiado grandes para GitHub)
+*.gguf
+*.safetensors
+*.bin
+outputs/
+outputs_v2/
+*-lora/
+asistente_sql/ollama/Modelfile.win
+
+# Datos descomprimidos / temporales
+data/raw/*.csv
+*.log
+logs/
+
+# Office / sistema
+~$*
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secretos
+.env
+.streamlit/secrets.toml

@@ -1,0 +1,7 @@
+# Fine-tuning (WSL2 + GPU NVIDIA). Ver 01_setup_wsl2.sh para la instalación completa.
+unsloth
+trl
+datasets
+torch
+requests
+pyodbc

@@ -1,0 +1,2035 @@
+import json
+import os
+# Definimos el contexto estándar que la IA tendrá como "Instruction"
+INSTRUCCION_MAESTRA = "Eres el Analista de Datos de EcoLogística Aérea. Traduce la pregunta coloquial a una consulta SQL válida para SQL Server basándote en el esquema de la base de datos."
+
+# Creamos nuestra lista de ejemplos (El "Libro de Texto")
+ejemplos_entrenamiento = [
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál fue el promedio general de tardanza al aterrizar de los aparatos que tienen exactamente 4 motores? Entrégame el valor exacto en minutos.",
+        "output": "SELECT AVG(DR.ArrDelayMinutes) AS Promedio_Tardanza\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE MA.Num_Motores = 4"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es la huella de carbono total (emisiones) generada exclusivamente por los vuelos que despegaron desde aeropuertos ubicados en Europa?",
+        "output": "SELECT SUM(R.co2) AS Huella_Total\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE C.Nombre_Continente = 'Europa'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime cuáles son las 3 aerolíneas que tienen el mayor promedio de retrasos en sus vuelos al despegar.",
+        "output": "SELECT TOP 3 AL.Operating_Airline, AVG(DR.DepDelayMinutes) AS Promedio_Retraso\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nGROUP BY AL.Operating_Airline\nORDER BY Promedio_Retraso DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Necesito saber cuánta gasolina gastaron en total las máquinas operadas por la firma 'Delta Air Lines'.",
+        "output": "SELECT SUM(R.fuel_burn) AS Total_Gasolina\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Delta Air Lines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué modelo exacto de avión (Fabricante y Modelo) es el que ha generado la mayor cantidad total de emisiones de CO2?",
+        "output": "SELECT TOP 1 MA.Fabricante, MA.Modelo, SUM(R.co2) AS Total_CO2\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nGROUP BY MA.Fabricante, MA.Modelo\nORDER BY Total_CO2 DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál fue el promedio de demora al llegar de los aviones bimotores (2 motores)?",
+        "output": "SELECT AVG(DR.ArrDelayMinutes) AS Promedio_Retraso\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE MA.Num_Motores = 2"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Quiero saber el total de combustible consumido históricamente por todas las máquinas construidas por el fabricante 'BOEING'.",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Total\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE MA.Fabricante = 'BOEING'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Lista las 5 compañías aéreas que más contaminación de carbono han generado en total.",
+        "output": "SELECT TOP 5 AL.Operating_Airline, SUM(R.co2) AS Total_Emisiones\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nGROUP BY AL.Operating_Airline\nORDER BY Total_Emisiones DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Haz un conteo rápido: ¿Cuántos vuelos en total se han operado utilizando el modelo 'Airbus A320 Neo Jet'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE MA.Modelo = 'Airbus A320 Neo Jet'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el peso máximo de despegue promedio de los aparatos que pertenecen a la aerolínea 'Southwest Airlines'.",
+        "output": "SELECT AVG(MA.Peso_Maximo_Despegue_lbs) AS Peso_Promedio\nFROM AERONAVE AN\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Southwest Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime la suma total de emisiones de carbono de los vuelos que partieron desde aeropuertos ubicados en Asia.",
+        "output": "SELECT SUM(R.co2) AS Total_Emisiones\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE C.Nombre_Continente = 'Asia'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de demora en la salida para los vuelos que se originaron en el continente de Africa?",
+        "output": "SELECT AVG(DR.DepDelayMinutes) AS Promedio_Demora\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE C.Nombre_Continente = 'Africa'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Quiero saber la cantidad total de gasolina quemada exclusivamente por los vuelos que salieron del 'Albuquerque International Sunport'.",
+        "output": "SELECT SUM(R.fuel_burn) AS Total_Gasolina\nFROM AEROPUERTO A\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE A.Nombre_Aeropuerto = 'Albuquerque International Sunport'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos en total despegaron desde el aeropuerto con código IATA 'ABQ'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM AEROPUERTO A\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE A.IATA_Code = 'ABQ'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué aerolínea (nombre de empresa) operó la mayor cantidad de vuelos que despegaron desde Europa?",
+        "output": "SELECT TOP 1 AL.Operating_Airline, COUNT(V.ID_Vuelo) AS Cantidad_Vuelos\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE C.Nombre_Continente = 'Europa'\nGROUP BY AL.Operating_Airline\nORDER BY Cantidad_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué aerolínea tiene la mayor cantidad de vuelos cancelados en su historia?",
+        "output": "SELECT TOP 1 AL.Operating_Airline, COUNT(R.ID_Resultado) AS Vuelos_Cancelados\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE R.Cancelled = 1\nGROUP BY AL.Operating_Airline\nORDER BY Vuelos_Cancelados DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime la cantidad exacta de vuelos que fueron desviados (diverted) en toda la base de datos.",
+        "output": "SELECT COUNT(ID_Resultado) AS Total_Desviados\nFROM RESULTADO\nWHERE Diverted = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos que despegaron desde el continente de Asia terminaron siendo cancelados?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Cancelados_Asia\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE C.Nombre_Continente = 'Asia' AND R.Cancelled = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Quiero saber el total de aterrizajes en aeropuertos de desvío (DivAirportLandings) que sufrieron los aviones de 4 motores.",
+        "output": "SELECT SUM(R.DivAirportLandings) AS Total_Aterrizajes_Desvio\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE MA.Num_Motores = 4"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos operados específicamente por la empresa 'Horizon Air' sufrieron un desvío?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Total_Desviados\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Horizon Air' AND R.Diverted = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos en total se operaron el 1 de enero de 2018?",
+        "output": "SELECT COUNT(ID_Vuelo) AS Total_Vuelos\nFROM VUELO\nWHERE FlightDate = '2018-01-01'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime la cantidad de vuelos que tuvieron un retraso al aterrizar de 15 minutos o más en toda la base de datos.",
+        "output": "SELECT COUNT(ID_Detalle_R) AS Retrasos_Mayores_15\nFROM DETALLE_RETRASOS\nWHERE ArrDel15 = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el total de la huella de carbono generada por los vuelos que despegaron del 'Abilene Regional Airport' durante el año 2018.",
+        "output": "SELECT SUM(R.co2) AS Total_Carbono\nFROM AEROPUERTO A\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE A.Nombre_Aeropuerto = 'Abilene Regional Airport' AND YEAR(V.FlightDate) = 2018"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos operados por la aerolínea 'Southwest Airlines' fueron cancelados durante el año 2018?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Cancelados\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Southwest Airlines' AND R.Cancelled = 1 AND YEAR(V.FlightDate) = 2018"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Quiero saber la suma de los minutos de demora al despegar de todos los vuelos operados por la aerolínea con el código IATA 'HA'.",
+        "output": "SELECT SUM(DR.DepDelayMinutes) AS Demora_Total\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.IATA_Code_Operating_Airline = 'HA'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime qué aerolíneas han acumulado estrictamente más de 50,000 minutos de demora en sus salidas. Dame el nombre de la empresa y el total.",
+        "output": "SELECT AL.Operating_Airline, SUM(DR.DepDelayMinutes) AS Total_Demora\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nGROUP BY AL.Operating_Airline\nHAVING SUM(DR.DepDelayMinutes) > 50000"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muéstrame la cantidad de vuelos cancelados agrupados por día durante todo el mes de enero de 2018.",
+        "output": "SELECT V.FlightDate, COUNT(R.ID_Resultado) AS Vuelos_Cancelados\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nWHERE R.Cancelled = 1 AND V.FlightDate >= '2018-01-01' AND V.FlightDate <= '2018-01-31'\nGROUP BY V.FlightDate\nORDER BY V.FlightDate"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el grupo de demora de llegada (ArrivalDelayGroups) más frecuente en los vuelos operados por 'Hawaiian Airlines'?",
+        "output": "SELECT TOP 1 DR.ArrivalDelayGroups, COUNT(DR.ID_Detalle_R) AS Frecuencia\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Hawaiian Airlines'\nGROUP BY DR.ArrivalDelayGroups\nORDER BY Frecuencia DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos tuvieron un número de vuelo de aerolínea comercializadora (Marketing Airline) exactamente igual a '3370'?",
+        "output": "SELECT COUNT(ID_Vuelo) AS Total_Vuelos\nFROM VUELO\nWHERE Flight_Number_Marketing_Airline = '3370'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el consumo total de combustible de los vuelos operados por aerolíneas que pertenecen a la alianza con el ID número 3?",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Combustible\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.ID_ALIANZA = 3"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos despegaron de 'Albuquerque International Sunport' y aterrizaron en 'Lehigh Valley International Airport'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Ruta\nFROM VUELO V\nINNER JOIN AEROPUERTO O ON V.OriginAirportID = O.AirportID\nINNER JOIN AEROPUERTO D ON V.DestAirportID = D.AirportID\nWHERE O.Nombre_Aeropuerto = 'Albuquerque International Sunport' AND D.Nombre_Aeropuerto = 'Lehigh Valley International Airport'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuánto combustible en total consumieron los vuelos registrados bajo el número de operación (Operating Airline) '4020'?",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Total\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nWHERE V.Flight_Number_Operating_Airline = '4020'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime la cantidad de vuelos que aterrizaron en el estado con el ID WAC número 3.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Vuelos_Llegada\nFROM VUELO V\nINNER JOIN AEROPUERTO A ON V.DestAirportID = A.AirportID\nINNER JOIN CIUDAD CI ON A.CityMarketID = CI.CityMarketID\nINNER JOIN ESTADO E ON CI.ID_Estado = E.ID_Estado\nWHERE E.WAC_ID = 3"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el promedio de emisiones de CO2 exclusivamente para los vuelos que partieron de ciudades asociadas al CityMarketID '30140'.",
+        "output": "SELECT AVG(R.co2) AS Promedio_CO2\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AEROPUERTO A ON V.OriginAirportID = A.AirportID\nWHERE A.CityMarketID = '30140'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué aerolínea operó la mayor cantidad de vuelos el 1 de enero de 2018?",
+        "output": "SELECT TOP 1 AL.Operating_Airline, COUNT(V.ID_Vuelo) AS Vuelos_Operados\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE V.FlightDate = '2018-01-01'\nGROUP BY AL.Operating_Airline\nORDER BY Vuelos_Operados DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el consumo total de gasolina de todos los aviones operados por empresas que pertenecen a la alianza 'SkyTeam'.",
+        "output": "SELECT SUM(R.fuel_burn) AS Total_Gasolina\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN ALIANZA ALI ON AL.ID_ALIANZA = ALI.ID_ALIANZA\nWHERE ALI.Nombre_Alianza = 'SkyTeam'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué red de aerolíneas (Red_de_Aerolineas) operó la mayor cantidad de vuelos en toda la historia de la base de datos?",
+        "output": "SELECT TOP 1 RA.Nombre_Red, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN RED_DE_AEROLINEAS RA ON AL.ID_Red = RA.ID_Red\nGROUP BY RA.Nombre_Red\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos en total fueron cancelados exclusivamente durante el mes de marzo, sin importar el año?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Cancelados_Marzo\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nWHERE R.Cancelled = 1 AND MONTH(V.FlightDate) = 3"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime la huella de carbono promedio de los aviones que fueron fabricados por 'AIRBUS' y que volaron hacia aeropuertos en Europa.",
+        "output": "SELECT AVG(R.co2) AS Promedio_Carbono\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE C.Nombre_Continente = 'Europa' AND MA.Fabricante = 'AIRBUS'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuáles son las 5 alianzas que tienen el mayor peso máximo de despegue promedio en su flota operada?",
+        "output": "SELECT TOP 5 ALI.Nombre_Alianza, AVG(MA.Peso_Maximo_Despegue_lbs) AS Peso_Promedio\nFROM MODELO_DE_AVION MA\nINNER JOIN AERONAVE AN ON MA.acft_icao = AN.acft_icao\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN ALIANZA ALI ON AL.ID_ALIANZA = ALI.ID_ALIANZA\nGROUP BY ALI.Nombre_Alianza\nORDER BY Peso_Promedio DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el promedio de tiempo de rodaje de salida (TaxiOut) para los vuelos operados por la aerolínea 'Delta Air Lines'.",
+        "output": "SELECT AVG(TX.TaxiOut) AS Promedio_TaxiOut\nFROM TAXI TX\nINNER JOIN VUELO V ON TX.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Delta Air Lines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos aeropuertos en la base de datos tienen la palabra 'International' en su nombre?",
+        "output": "SELECT COUNT(AirportID) AS Total_Internacionales\nFROM AEROPUERTO\nWHERE Nombre_Aeropuerto LIKE '%International%'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime cuántos vuelos tienen un registro vacío o nulo en su consumo de combustible (fuel_burn).",
+        "output": "SELECT COUNT(ID_Resultado) AS Vuelos_Sin_Combustible\nFROM RESULTADO\nWHERE fuel_burn IS NULL"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué modelo exacto de avión tiene la mayor cantidad de vuelos que estaban programados en el sistema pero terminaron siendo cancelados?",
+        "output": "SELECT TOP 1 MA.Fabricante, MA.Modelo, COUNT(R.ID_Resultado) AS Total_Cancelados\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE R.Cancelled = 1 AND R.ID_Programacion IS NOT NULL\nGROUP BY MA.Fabricante, MA.Modelo\nORDER BY Total_Cancelados DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula la suma total del tiempo de rodaje de llegada (TaxiIn) para todos los vuelos que aterrizaron en aeropuertos de Europa.",
+        "output": "SELECT SUM(TX.TaxiIn) AS Total_TaxiIn\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN TAXI TX ON V.ID_Vuelo = TX.ID_Vuelo\nWHERE C.Nombre_Continente = 'Europa'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos en total fueron operados por las empresas 'Delta Air Lines' o 'United Air Lines'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline IN ('Delta Air Lines', 'United Air Lines')"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué modelos de avión (Fabricante y Modelo) tienen un peso máximo de despegue que es superior al promedio general de todos los aviones?",
+        "output": "SELECT Fabricante, Modelo\nFROM MODELO_DE_AVION\nWHERE Peso_Maximo_Despegue_lbs > (SELECT AVG(Peso_Maximo_Despegue_lbs) FROM MODELO_DE_AVION)"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el total de emisiones de carbono generadas por aviones que NO fueron fabricados por 'BOEING'.",
+        "output": "SELECT SUM(R.co2) AS Total_CO2\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE MA.Fabricante != 'BOEING'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime la suma total de los minutos de retraso al despegar y, al mismo tiempo, la suma total de minutos de retraso al aterrizar de todos los vuelos de 'Southwest Airlines'.",
+        "output": "SELECT SUM(DR.DepDelayMinutes) AS Total_Salida, SUM(DR.ArrDelayMinutes) AS Total_Llegada\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Southwest Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el consumo total de gasolina desperdiciado en vuelos que fueron cancelados, que tenían programado salir desde el continente de 'Europa' y que eran operados por aviones de 4 motores.",
+        "output": "SELECT SUM(R.fuel_burn) AS Gasolina_Desperdiciada\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE C.Nombre_Continente = 'Europa' AND R.Cancelled = 1 AND MA.Num_Motores = 4"
+    },
+    
+
+    # =============================================
+    # BLOQUE 1: ANÁLISIS TEMPORALES (Trimestre, Día de Semana, Hora)
+    # =============================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿En qué trimestre del año se registraron más vuelos cancelados en total?",
+        "output": "SELECT TOP 1 P.Quarter, COUNT(R.ID_Resultado) AS Total_Cancelados\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE R.Cancelled = 1\nGROUP BY P.Quarter\nORDER BY Total_Cancelados DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime cuántos vuelos se realizaron por cada día de la semana. Quiero ver todos los días ordenados de mayor a menor cantidad.",
+        "output": "SELECT P.DayOfWeek, COUNT(R.ID_Resultado) AS Total_Vuelos\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nGROUP BY P.DayOfWeek\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál fue el mes con mayor consumo total de combustible en el año 2018?",
+        "output": "SELECT TOP 1 P.Month, SUM(R.fuel_burn) AS Consumo_Total\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.Year = 2018\nGROUP BY P.Month\nORDER BY Consumo_Total DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿En qué día del mes se producen más retrasos de salida mayores a 15 minutos?",
+        "output": "SELECT TOP 1 P.DayofMonth, COUNT(DR.ID_Detalle_R) AS Total_Retrasos\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE DR.DepDel15 = 1\nGROUP BY P.DayofMonth\nORDER BY Total_Retrasos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muéstrame el total de emisiones de CO2 agrupadas por trimestre y año, ordenadas cronológicamente.",
+        "output": "SELECT P.Year, P.Quarter, SUM(R.co2) AS Total_CO2\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nGROUP BY P.Year, P.Quarter\nORDER BY P.Year, P.Quarter"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el bloque horario de salida (DepTimeBlk) con el mayor promedio de retraso al despegar?",
+        "output": "SELECT TOP 1 BH.DepTimeBlk, AVG(DR.DepDelayMinutes) AS Promedio_Retraso\nFROM BLOQUE_HORARIO BH\nINNER JOIN PROGRAMACION P ON BH.ID_Bloque = P.ID_Bloque\nINNER JOIN RESULTADO R ON P.ID_Programacion = R.ID_Programacion\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nGROUP BY BH.DepTimeBlk\nORDER BY Promedio_Retraso DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos en total se operaron cada año? Muéstrame el año y la cantidad, ordenados de más reciente a más antiguo.",
+        "output": "SELECT P.Year, COUNT(R.ID_Resultado) AS Total_Vuelos\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nGROUP BY P.Year\nORDER BY P.Year DESC"
+    },
+
+    # =============================================
+    # BLOQUE 2: ANÁLISIS POR ESTADO Y CIUDAD
+    # =============================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el estado con más vuelos de salida en toda la base de datos?",
+        "output": "SELECT TOP 1 E.StateName, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nGROUP BY E.StateName\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el top 5 de ciudades con mayor cantidad de llegadas de vuelos.",
+        "output": "SELECT TOP 5 CI.CityName, COUNT(V.ID_Vuelo) AS Total_Llegadas\nFROM CIUDAD CI\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nGROUP BY CI.CityName\nORDER BY Total_Llegadas DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué estado acumuló más emisiones de CO2 como destino de vuelos?",
+        "output": "SELECT TOP 1 E.StateName, SUM(R.co2) AS Total_CO2\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY E.StateName\nORDER BY Total_CO2 DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Necesito saber cuántos vuelos en total se operaron desde cada ciudad del estado de 'California'. Muéstrame ciudad y cantidad.",
+        "output": "SELECT CI.CityName, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'California'\nGROUP BY CI.CityName\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el código de estado (StateCode) que tiene el mayor promedio de retraso en las llegadas?",
+        "output": "SELECT TOP 1 E.StateCode, AVG(DR.ArrDelayMinutes) AS Promedio_Retraso\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nGROUP BY E.StateCode\nORDER BY Promedio_Retraso DESC"
+    },
+
+    # =============================================
+    # BLOQUE 3: ANÁLISIS POR AEROPUERTO (ORIGEN vs DESTINO)
+    # =============================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame los 10 aeropuertos que reciben más vuelos como destino.",
+        "output": "SELECT TOP 10 A.Nombre_Aeropuerto, A.IATA_Code, COUNT(V.ID_Vuelo) AS Total_Llegadas\nFROM AEROPUERTO A\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nGROUP BY A.Nombre_Aeropuerto, A.IATA_Code\nORDER BY Total_Llegadas DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el aeropuerto de origen con mayor consumo total de combustible acumulado?",
+        "output": "SELECT TOP 1 A.Nombre_Aeropuerto, SUM(R.fuel_burn) AS Consumo_Total\nFROM AEROPUERTO A\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY A.Nombre_Aeropuerto\nORDER BY Consumo_Total DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué par de aeropuertos (origen → destino) tiene la ruta con más vuelos operados históricamente? Dame los nombres de ambos aeropuertos.",
+        "output": "SELECT TOP 1 O.Nombre_Aeropuerto AS Origen, D.Nombre_Aeropuerto AS Destino, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AEROPUERTO O ON V.OriginAirportID = O.AirportID\nINNER JOIN AEROPUERTO D ON V.DestAirportID = D.AirportID\nGROUP BY O.Nombre_Aeropuerto, D.Nombre_Aeropuerto\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos aeropuertos distintos han actuado como destino de vuelos que salieron del aeropuerto con código IATA 'LAX'?",
+        "output": "SELECT COUNT(DISTINCT V.DestAirportID) AS Destinos_Distintos\nFROM VUELO V\nINNER JOIN AEROPUERTO A ON V.OriginAirportID = A.AirportID\nWHERE A.IATA_Code = 'LAX'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime el promedio de emisiones de CO2 por vuelo para cada aeropuerto de salida. Muéstrame los 5 con mayor promedio.",
+        "output": "SELECT TOP 5 A.Nombre_Aeropuerto, AVG(R.co2) AS Promedio_CO2\nFROM AEROPUERTO A\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY A.Nombre_Aeropuerto\nORDER BY Promedio_CO2 DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué aeropuerto de destino acumula más minutos de retraso en la llegada de todos sus vuelos?",
+        "output": "SELECT TOP 1 A.Nombre_Aeropuerto, SUM(DR.ArrDelayMinutes) AS Total_Minutos_Retraso\nFROM AEROPUERTO A\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nGROUP BY A.Nombre_Aeropuerto\nORDER BY Total_Minutos_Retraso DESC"
+    },
+
+    # =============================================
+    # BLOQUE 4: SUBCONSULTAS Y COMPARATIVAS
+    # =============================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué aerolíneas operaron más vuelos que el promedio de vuelos por aerolínea? Dame el nombre y la cantidad.",
+        "output": "SELECT AL.Operating_Airline, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nGROUP BY AL.Operating_Airline\nHAVING COUNT(V.ID_Vuelo) > (SELECT AVG(vuelos_por_aerolinea) FROM (SELECT COUNT(V2.ID_Vuelo) AS vuelos_por_aerolinea FROM VUELO V2 INNER JOIN AERONAVE AN2 ON V2.Tail_Number = AN2.Tail_Number GROUP BY AN2.DOT_ID_Operating_Airline) sub)\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime qué aeropuertos tienen más vuelos de salida que el aeropuerto con código IATA 'ORD'. Muéstrame el nombre del aeropuerto y la cantidad.",
+        "output": "SELECT A.Nombre_Aeropuerto, COUNT(V.ID_Vuelo) AS Total_Salidas\nFROM AEROPUERTO A\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nGROUP BY A.Nombre_Aeropuerto\nHAVING COUNT(V.ID_Vuelo) > (SELECT COUNT(V2.ID_Vuelo) FROM AEROPUERTO A2 INNER JOIN VUELO V2 ON A2.AirportID = V2.OriginAirportID WHERE A2.IATA_Code = 'ORD')\nORDER BY Total_Salidas DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuáles son los modelos de avión cuyo consumo promedio de combustible por vuelo supera el promedio global de todos los modelos?",
+        "output": "SELECT MA.Fabricante, MA.Modelo, AVG(R.fuel_burn) AS Promedio_Combustible\nFROM MODELO_DE_AVION MA\nINNER JOIN AERONAVE AN ON MA.acft_icao = AN.acft_icao\nINNER JOIN VUELO V ON AN.Tail_Number = V.Tail_Number\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY MA.Fabricante, MA.Modelo\nHAVING AVG(R.fuel_burn) > (SELECT AVG(fuel_burn) FROM RESULTADO WHERE fuel_burn IS NOT NULL)\nORDER BY Promedio_Combustible DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué aerolíneas NO tuvieron ningún vuelo cancelado en toda la base de datos? Dame sus nombres.",
+        "output": "SELECT AL.Operating_Airline\nFROM AEROLINEA AL\nWHERE AL.DOT_ID_Operating_Airline NOT IN (\n    SELECT DISTINCT AN.DOT_ID_Operating_Airline\n    FROM AERONAVE AN\n    INNER JOIN VUELO V ON AN.Tail_Number = V.Tail_Number\n    INNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\n    WHERE R.Cancelled = 1\n)"
+    },
+
+    # =============================================
+    # BLOQUE 5: EFICIENCIA Y RATIOS
+    # =============================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es la aerolínea con mejor eficiencia de combustible, entendida como el menor promedio de combustible consumido por vuelo?",
+        "output": "SELECT TOP 1 AL.Operating_Airline, AVG(R.fuel_burn) AS Promedio_Combustible\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE R.fuel_burn IS NOT NULL\nGROUP BY AL.Operating_Airline\nORDER BY Promedio_Combustible ASC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el porcentaje de vuelos cancelados sobre el total de vuelos para cada aerolínea. Muéstrame las 10 con mayor tasa de cancelación.",
+        "output": "SELECT TOP 10\n    AL.Operating_Airline,\n    COUNT(R.ID_Resultado) AS Total_Vuelos,\n    SUM(CASE WHEN R.Cancelled = 1 THEN 1 ELSE 0 END) AS Cancelados,\n    CAST(SUM(CASE WHEN R.Cancelled = 1 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(R.ID_Resultado) * 100 AS Porcentaje_Cancelacion\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nGROUP BY AL.Operating_Airline\nORDER BY Porcentaje_Cancelacion DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el modelo de avión más eficiente en términos de emisiones de CO2 por kilómetro de distancia recorrida?",
+        "output": "SELECT TOP 1 MA.Fabricante, MA.Modelo,\n    SUM(R.co2) / NULLIF(SUM(RU.Distance), 0) AS CO2_Por_Km\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nINNER JOIN RUTA RU ON P.RutaID = RU.RutaID\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE R.co2 IS NOT NULL AND RU.Distance > 0\nGROUP BY MA.Fabricante, MA.Modelo\nORDER BY CO2_Por_Km ASC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime el porcentaje de vuelos desviados por cada continente de origen.",
+        "output": "SELECT\n    C.Nombre_Continente,\n    COUNT(R.ID_Resultado) AS Total_Vuelos,\n    SUM(CASE WHEN R.Diverted = 1 THEN 1 ELSE 0 END) AS Desviados,\n    CAST(SUM(CASE WHEN R.Diverted = 1 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(R.ID_Resultado) * 100 AS Porcentaje_Desviados\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY C.Nombre_Continente\nORDER BY Porcentaje_Desviados DESC"
+    },
+
+    # =============================================
+    # BLOQUE 6: ANÁLISIS POR RUTA Y DISTANCIA
+    # =============================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el grupo de distancia (DistanceGroup) con mayor cantidad de vuelos operados?",
+        "output": "SELECT TOP 1 RU.DistanceGroup, COUNT(R.ID_Resultado) AS Total_Vuelos\nFROM RUTA RU\nINNER JOIN PROGRAMACION P ON RU.RutaID = P.RutaID\nINNER JOIN RESULTADO R ON P.ID_Programacion = R.ID_Programacion\nGROUP BY RU.DistanceGroup\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muéstrame el consumo total de combustible agrupado por grupo de distancia (DistanceGroup), ordenado de mayor a menor consumo.",
+        "output": "SELECT RU.DistanceGroup, SUM(R.fuel_burn) AS Consumo_Total\nFROM RUTA RU\nINNER JOIN PROGRAMACION P ON RU.RutaID = P.RutaID\nINNER JOIN RESULTADO R ON P.ID_Programacion = R.ID_Programacion\nWHERE R.fuel_burn IS NOT NULL\nGROUP BY RU.DistanceGroup\nORDER BY Consumo_Total DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de tiempo real de vuelo (AirTime) para rutas de más de 1000 millas de distancia?",
+        "output": "SELECT AVG(CR.AirTime) AS Promedio_AirTime\nFROM RUTA RU\nINNER JOIN PROGRAMACION P ON RU.RutaID = P.RutaID\nINNER JOIN RESULTADO R ON P.ID_Programacion = R.ID_Programacion\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nWHERE RU.Distance > 1000"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos tuvieron una distancia de ruta inferior a 500 millas y aun así llegaron con retraso?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Cortos_Con_Retraso\nFROM RUTA RU\nINNER JOIN PROGRAMACION P ON RU.RutaID = P.RutaID\nINNER JOIN RESULTADO R ON P.ID_Programacion = R.ID_Programacion\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE RU.Distance < 500 AND DR.ArrDel15 = 1"
+    },
+
+    # =============================================
+    # BLOQUE 7: ANÁLISIS DE TIEMPO DE VUELO Y CRONOMETRÍA
+    # =============================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el tiempo promedio en el aire (AirTime) para los vuelos operados por 'American Airlines'?",
+        "output": "SELECT AVG(CR.AirTime) AS Promedio_AirTime\nFROM CRONOMETRIA_REAL CR\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'American Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime la diferencia promedio entre el tiempo de vuelo programado (CRSElapsedTime) y el tiempo real (ActualElapsedTime) para cada aerolínea. Muestra las 5 con mayor desviación.",
+        "output": "SELECT TOP 5 AL.Operating_Airline,\n    AVG(CR.ActualElapsedTime - P.CRSElapsedTime) AS Desviacion_Promedio\nFROM CRONOMETRIA_REAL CR\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE CR.ActualElapsedTime IS NOT NULL AND P.CRSElapsedTime IS NOT NULL\nGROUP BY AL.Operating_Airline\nORDER BY ABS(AVG(CR.ActualElapsedTime - P.CRSElapsedTime)) DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el tiempo total acumulado en el aire (AirTime) de todos los aviones fabricados por 'AIRBUS'?",
+        "output": "SELECT SUM(CR.AirTime) AS Total_AirTime\nFROM CRONOMETRIA_REAL CR\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE MA.Fabricante = 'AIRBUS' AND CR.AirTime IS NOT NULL"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos tuvieron un tiempo de rodaje de salida (TaxiOut) mayor a 30 minutos?",
+        "output": "SELECT COUNT(TX.ID_TAXI) AS Vuelos_TaxiOut_Largo\nFROM TAXI TX\nWHERE TX.TaxiOut > 30"
+    },
+
+    # =============================================
+    # BLOQUE 8: ANÁLISIS DE AERONAVES ESPECÍFICAS
+    # =============================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántas aeronaves distintas (por Tail Number) tiene registradas la aerolínea 'United Air Lines'?",
+        "output": "SELECT COUNT(AN.Tail_Number) AS Total_Aeronaves\nFROM AERONAVE AN\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'United Air Lines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el total de vuelos realizados por la aeronave con matrícula 'N12345'.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nWHERE V.Tail_Number = 'N12345'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué aeronave (Tail Number) tiene el mayor consumo total de combustible acumulado en toda su historia de vuelos?",
+        "output": "SELECT TOP 1 V.Tail_Number, SUM(R.fuel_burn) AS Consumo_Total\nFROM VUELO V\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE R.fuel_burn IS NOT NULL\nGROUP BY V.Tail_Number\nORDER BY Consumo_Total DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime cuántos modelos de avión distintos (acft_icao) tiene registrados cada fabricante en la base de datos.",
+        "output": "SELECT Fabricante, COUNT(acft_icao) AS Total_Modelos\nFROM MODELO_DE_AVION\nGROUP BY Fabricante\nORDER BY Total_Modelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuáles son los tipos de motor (Tipo_Motor) disponibles en la base de datos y cuántos modelos de avión usa cada uno?",
+        "output": "SELECT Tipo_Motor, COUNT(acft_icao) AS Total_Modelos\nFROM MODELO_DE_AVION\nGROUP BY Tipo_Motor\nORDER BY Total_Modelos DESC"
+    },
+
+    # =============================================
+    # BLOQUE 9: CONSULTAS MULTIFILTRO COMPLEJAS
+    # =============================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Quiero saber el total de emisiones de CO2 de los vuelos que: 1) salieron de América del Norte, 2) fueron operados por aviones BOEING, 3) tuvieron retraso en la llegada y 4) no fueron cancelados.",
+        "output": "SELECT SUM(R.co2) AS Total_CO2\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE C.Nombre_Continente = 'North America'\n  AND MA.Fabricante = 'BOEING'\n  AND DR.ArrDel15 = 1\n  AND R.Cancelled = 0"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muéstrame las aerolíneas que, durante el año 2018, tuvieron más de 100 vuelos cancelados Y más de 50 vuelos desviados al mismo tiempo.",
+        "output": "SELECT AL.Operating_Airline,\n    SUM(CASE WHEN R.Cancelled = 1 THEN 1 ELSE 0 END) AS Total_Cancelados,\n    SUM(CASE WHEN R.Diverted = 1 THEN 1 ELSE 0 END) AS Total_Desviados\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.Year = 2018\nGROUP BY AL.Operating_Airline\nHAVING SUM(CASE WHEN R.Cancelled = 1 THEN 1 ELSE 0 END) > 100\n   AND SUM(CASE WHEN R.Diverted = 1 THEN 1 ELSE 0 END) > 50"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos operados por aviones con más de 2 motores y que pertenecen a la alianza 'Star Alliance' tuvieron retraso en la salida durante el primer trimestre?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Total_Vuelos\nFROM RESULTADO R\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN ALIANZA ALI ON AL.ID_ALIANZA = ALI.ID_ALIANZA\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE MA.Num_Motores > 2\n  AND ALI.Operated_or_Branded_Code_Share_Partners = 'Star Alliance'\n  AND DR.DepDel15 = 1\n  AND P.Quarter = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el top 3 de estados como destino que acumularon más minutos de retraso en llegada durante los lunes (DayOfWeek = 2) del año 2018.",
+        "output": "SELECT TOP 3 E.StateName, SUM(DR.ArrDelayMinutes) AS Total_Retraso\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.Year = 2018 AND P.DayOfWeek = 2\nGROUP BY E.StateName\nORDER BY Total_Retraso DESC"
+    },
+
+    # =============================================
+    # BLOQUE 10: DATOS NULOS Y CALIDAD DE DATOS
+    # =============================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántas aeronaves no tienen un modelo de avión registrado (acft_icao nulo)?",
+        "output": "SELECT COUNT(Tail_Number) AS Aeronaves_Sin_Modelo\nFROM AERONAVE\nWHERE acft_icao IS NULL"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos tienen el campo de tiempo real de llegada (ArrTime) vacío o nulo?",
+        "output": "SELECT COUNT(CR.ID_CR) AS Vuelos_Sin_ArrTime\nFROM CRONOMETRIA_REAL CR\nWHERE CR.ArrTime IS NULL"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame la cantidad de registros en RESULTADO que no tienen asignado ni una programación ni una cronometría real.",
+        "output": "SELECT COUNT(ID_Resultado) AS Registros_Incompletos\nFROM RESULTADO\nWHERE ID_Programacion IS NULL AND ID_CR IS NULL"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos aeropuertos tienen registrada su latitud pero no tienen registrada su longitud?",
+        "output": "SELECT COUNT(AirportID) AS Aeropuertos_Sin_Longitud\nFROM AEROPUERTO\nWHERE Latitud IS NOT NULL AND Longitud IS NULL"
+    },
+
+    # =============================================
+    # BLOQUE 11: ANÁLISIS DE RED Y CÓDIGO IATA
+    # =============================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos en total fueron operados por aerolíneas con código IATA de marketing que empieza por 'A'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN RED_DE_AEROLINEAS RA ON AL.ID_Red = RA.ID_Red\nWHERE RA.IATA_Code_Marketing_Airline LIKE 'A%'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el listado de todas las redes de aerolíneas (Marketing_Airline_Network) que tienen vuelos en la base de datos, junto con la cantidad de vuelos de cada una.",
+        "output": "SELECT RA.Marketing_Airline_Network, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM RED_DE_AEROLINEAS RA\nINNER JOIN AEROLINEA AL ON RA.ID_Red = AL.ID_Red\nINNER JOIN AERONAVE AN ON AL.DOT_ID_Operating_Airline = AN.DOT_ID_Operating_Airline\nINNER JOIN VUELO V ON AN.Tail_Number = V.Tail_Number\nGROUP BY RA.Marketing_Airline_Network\nORDER BY Total_Vuelos DESC"
+    },
+
+    # =============================================
+    # BLOQUE 12: PREGUNTAS EN TONO MUY COLOQUIAL
+    # =============================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Oye, ¿cuántos aviones distintos tiene la flota completa registrada en el sistema?",
+        "output": "SELECT COUNT(Tail_Number) AS Total_Aeronaves\nFROM AERONAVE"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "A ver, ¿cuántos países o continentes están cubiertos en la base de datos?",
+        "output": "SELECT COUNT(Nombre_Continente) AS Total_Continentes\nFROM CONTINENTE"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Necesito saber rápido: ¿cuál es la aerolínea que más gasolina gasta en promedio por cada vuelo que hace?",
+        "output": "SELECT TOP 1 AL.Operating_Airline, AVG(R.fuel_burn) AS Promedio_Combustible\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE R.fuel_burn IS NOT NULL\nGROUP BY AL.Operating_Airline\nORDER BY Promedio_Combustible DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Me puedes decir cuántos vuelos en total hay cargados en el sistema?",
+        "output": "SELECT COUNT(ID_Vuelo) AS Total_Vuelos\nFROM VUELO"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Quiero ver todos los estados que empiecen con la letra 'N', con la cantidad de vuelos que salieron desde cada uno.",
+        "output": "SELECT E.StateName, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName LIKE 'N%'\nGROUP BY E.StateName\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame un listado de todos los aeropuertos que están en la ciudad de 'Chicago', con su código IATA.",
+        "output": "SELECT A.Nombre_Aeropuerto, A.IATA_Code\nFROM AEROPUERTO A\nINNER JOIN CIUDAD CI ON A.CityMarketID = CI.CityMarketID\nWHERE CI.CityName LIKE '%Chicago%'"
+    },
+    # --- TANDA DE REFUERZO: EL PUENTE AERONAVE OBLIGATORIO ---
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Lista el modelo exacto del avión que realizó el vuelo con el identificador 'HA_20180324_N486HA_1900'.",
+        "output": "SELECT MA.Modelo\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE V.ID_Vuelo = 'HA_20180324_N486HA_1900'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál fue el consumo total de combustible en vuelos realizados por aviones que tienen exactamente 2 motores?",
+        "output": "SELECT SUM(R.fuel_burn) AS Combustible_Total\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE MA.Num_Motores = 2"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime qué aerolínea (Operating Airline) operó el vuelo donde la aeronave tenía el número de cola 'N904WN'.",
+        "output": "SELECT AL.Operating_Airline\nFROM AERONAVE AN\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AN.Tail_Number = 'N904WN'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el promedio de minutos de retraso en la salida para los vuelos operados por el fabricante 'EMBRAER'.",
+        "output": "SELECT AVG(DR.DepDelayMinutes) AS Retraso_Promedio\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE MA.Fabricante = 'EMBRAER'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos en total fueron operados por aviones pertenecientes a la alianza comercial con ID 2?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.ID_ALIANZA = 2"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Encuentra el peso máximo de despegue promedio de los aviones que sufrieron un vuelo cancelado.",
+        "output": "SELECT AVG(MA.Peso_Maximo_Despegue_lbs) AS Peso_Promedio\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE R.Cancelled = 1"
+    },
+    # --- TANDA DE STRESS TESTS Y CASOS EXTREMOS ---
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos salieron de un aeropuerto en el estado de 'Texas' y aterrizaron en un aeropuerto en el estado de 'California'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AEROPUERTO AO ON V.OriginAirportID = AO.AirportID\nINNER JOIN CIUDAD CIO ON AO.CityMarketID = CIO.CityMarketID\nINNER JOIN ESTADO EO ON CIO.ID_Estado = EO.ID_Estado\nINNER JOIN AEROPUERTO AD ON V.DestAirportID = AD.AirportID\nINNER JOIN CIUDAD CID ON AD.CityMarketID = CID.CityMarketID\nINNER JOIN ESTADO ED ON CID.ID_Estado = ED.ID_Estado\nWHERE EO.StateName = 'Texas' AND ED.StateName = 'California'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántas aerolíneas distintas (contando solo valores únicos) han operado al menos un vuelo que terminó siendo cancelado?",
+        "output": "SELECT COUNT(DISTINCT AL.Operating_Airline) AS Aerolineas_Con_Cancelaciones\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE R.Cancelled = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Por cada fabricante de aviones, muéstrame el total de vuelos operados, el promedio de emisiones de CO2 y el total de combustible quemado.",
+        "output": "SELECT MA.Fabricante, COUNT(V.ID_Vuelo) AS Total_Vuelos, AVG(R.co2) AS Promedio_CO2, SUM(R.fuel_burn) AS Total_Combustible\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nGROUP BY MA.Fabricante"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos fueron comercializados por la red con el código IATA 'DL' pero operados físicamente por la aerolínea 'SkyWest Airlines'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Vuelos_Codigo_Compartido\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN RED_DE_AEROLINEAS RA ON AL.ID_Red = RA.ID_Red\nWHERE RA.IATA_Code_Marketing_Airline = 'DL' AND AL.Operating_Airline = 'SkyWest Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de tiempo de rodaje de salida (TaxiOut) de los aviones que tienen exactamente 2 motores y despegaron desde el 'Miami International Airport'?",
+        "output": "SELECT AVG(TX.TaxiOut) AS Promedio_TaxiOut\nFROM TAXI TX\nINNER JOIN VUELO V ON TX.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AEROPUERTO A ON V.OriginAirportID = A.AirportID\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE A.Nombre_Aeropuerto = 'Miami International Airport' AND MA.Num_Motores = 2"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muestra el fabricante de aviones que tiene el mayor tiempo acumulado en el aire (AirTime) considerando únicamente las rutas que tienen una distancia menor a 500 millas.",
+        "output": "SELECT TOP 1 MA.Fabricante, SUM(CR.AirTime) AS Tiempo_Total_Aire\nFROM CRONOMETRIA_REAL CR\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nINNER JOIN RUTA RU ON P.RutaID = RU.RutaID\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE RU.Distance < 500\nGROUP BY MA.Fabricante\nORDER BY Tiempo_Total_Aire DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el total de la huella de carbono generada por los vuelos desviados o cancelados operados por aeronaves de la marca 'BOEING'.",
+        "output": "SELECT SUM(R.co2) AS Total_CO2\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE (R.Diverted = 1 OR R.Cancelled = 1) AND MA.Fabricante = 'BOEING'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Quiero saber el porcentaje exacto de vuelos cancelados respecto al total de vuelos programados durante el primer trimestre (Quarter = 1).",
+        "output": "SELECT CAST(SUM(CASE WHEN R.Cancelled = 1 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(R.ID_Resultado) * 100 AS Porcentaje_Cancelacion_Q1\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.Quarter = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué aeronaves (identificadas por su Tail Number) operaron más de 100 vuelos sin sufrir ninguna cancelación en todo el registro?",
+        "output": "SELECT V.Tail_Number, COUNT(V.ID_Vuelo) AS Vuelos_Exitosos\nFROM VUELO V\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE R.Cancelled = 0\nGROUP BY V.Tail_Number\nHAVING COUNT(V.ID_Vuelo) > 100"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuáles son las 3 rutas (DistanceGroup) que acumulan la mayor cantidad de minutos de demora en la llegada por parte de aviones de 4 motores?",
+        "output": "SELECT TOP 3 RU.DistanceGroup, SUM(DR.ArrDelayMinutes) AS Demora_Total_Llegada\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nINNER JOIN RUTA RU ON P.RutaID = RU.RutaID\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE MA.Num_Motores = 4\nGROUP BY RU.DistanceGroup\nORDER BY Demora_Total_Llegada DESC"
+    },
+    # --- NUEVA TANDA 1/5: CRONOMETRIA AVANZADA, MATEMÁTICAS EN SQL Y EXCEPCIONES TEMPORALES ---
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué día de la semana (DayOfWeek) registró la mayor cantidad de vuelos cancelados durante el año 2018?",
+        "output": "SELECT TOP 1 P.DayOfWeek, COUNT(R.ID_Resultado) AS Total_Cancelados\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE R.Cancelled = 1 AND P.Year = 2018\nGROUP BY P.DayOfWeek\nORDER BY Total_Cancelados DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Lista los bloques horarios de salida (DepTimeBlk) junto con el total de minutos de retraso al despegar acumulados en cada uno, ordenados de peor a mejor.",
+        "output": "SELECT BH.DepTimeBlk, SUM(DR.DepDelayMinutes) AS Total_Retrasos\nFROM BLOQUE_HORARIO BH\nINNER JOIN PROGRAMACION P ON BH.ID_Bloque = P.ID_Bloque\nINNER JOIN RESULTADO R ON P.ID_Programacion = R.ID_Programacion\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nGROUP BY BH.DepTimeBlk\nORDER BY Total_Retrasos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos lograron salir antes de tiempo (retraso de salida negativo) pero aun así llegaron tarde a su destino (retraso de llegada positivo)?",
+        "output": "SELECT COUNT(DR.ID_Detalle_R) AS Vuelos_Recuperacion_Fallida\nFROM DETALLE_RETRASOS DR\nWHERE DR.DepDelay < 0 AND DR.ArrDelay > 0"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime la cantidad total de vuelos que fueron desviados (diverted) durante el cuarto trimestre (Quarter 4).",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Desviados_Q4\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE R.Diverted = 1 AND P.Quarter = 4"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula la suma total de las distancias recorridas (Distance) por la aerolínea 'American Airlines' exclusivamente durante el mes de marzo.",
+        "output": "SELECT SUM(RU.Distance) AS Distancia_Total\nFROM RUTA RU\nINNER JOIN PROGRAMACION P ON RU.RutaID = P.RutaID\nINNER JOIN RESULTADO R ON P.ID_Programacion = R.ID_Programacion\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'American Airlines' AND P.Month = 3"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos superaron su tiempo de vuelo programado? Es decir, su tiempo real de vuelo fue mayor a su tiempo estimado.",
+        "output": "SELECT COUNT(CR.ID_CR) AS Vuelos_Lentos\nFROM CRONOMETRIA_REAL CR\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE CR.ActualElapsedTime > P.CRSElapsedTime"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el promedio de combustible consumido por vuelo durante los fines de semana (días de la semana 6 y 7).",
+        "output": "SELECT AVG(R.fuel_burn) AS Promedio_Combustible_Fin_De_Semana\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.DayOfWeek IN (6, 7) AND R.fuel_burn IS NOT NULL"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de minutos de demora en la salida para los aviones considerados pesados, es decir, con un peso máximo de despegue superior a 100,000 libras?",
+        "output": "SELECT AVG(DR.DepDelayMinutes) AS Promedio_Demora_Pesados\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE MA.Peso_Maximo_Despegue_lbs > 100000"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame las 3 aerolíneas que tienen el mayor tiempo de rodaje total promedio por vuelo (sumando el tiempo de rodaje de salida y el de llegada).",
+        "output": "SELECT TOP 3 AL.Operating_Airline, AVG(TX.TaxiIn + TX.TaxiOut) AS Promedio_Rodaje_Total\nFROM TAXI TX\nINNER JOIN VUELO V ON TX.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nGROUP BY AL.Operating_Airline\nORDER BY Promedio_Rodaje_Total DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos operados por 'Delta Air Lines' tuvieron un registro perfecto? Es decir, sin retrasos mayores a 15 minutos al salir ni al llegar, y que no fueron cancelados.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Vuelos_Perfectos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE AL.Operating_Airline = 'Delta Air Lines' AND DR.DepDel15 = 0 AND DR.ArrDel15 = 0 AND R.Cancelled = 0"
+    },
+    # --- NUEVA TANDA 2/5: LÓGICA CONDICIONAL (CASE), SUBCONSULTAS DE EXCLUSIÓN Y CRUCES INTERNOS ---
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime las matrículas de aeronaves (Tail Number) que están registradas en la tabla de aeronaves pero que nunca han operado ningún vuelo en la base de datos.",
+        "output": "SELECT Tail_Number\nFROM AERONAVE\nWHERE Tail_Number NOT IN (SELECT DISTINCT Tail_Number FROM VUELO WHERE Tail_Number IS NOT NULL)"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Clasifica los vuelos en 'Largo Alcance' si su distancia programada supera las 2000 millas, y 'Corto Alcance' si es menor o igual. Dime cuántos vuelos hay en cada categoría.",
+        "output": "SELECT CASE WHEN RU.Distance > 2000 THEN 'Largo Alcance' ELSE 'Corto Alcance' END AS Categoria_Vuelo, COUNT(R.ID_Resultado) AS Total_Vuelos\nFROM RUTA RU\nINNER JOIN PROGRAMACION P ON RU.RutaID = P.RutaID\nINNER JOIN RESULTADO R ON P.ID_Programacion = R.ID_Programacion\nGROUP BY CASE WHEN RU.Distance > 2000 THEN 'Largo Alcance' ELSE 'Corto Alcance' END"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Busca todos los aeropuertos cuyo nombre contenga la palabra 'Regional' o 'Municipal' y dime cuántos vuelos de salida han tenido en total por aeropuerto.",
+        "output": "SELECT A.Nombre_Aeropuerto, COUNT(V.ID_Vuelo) AS Vuelos_Salida\nFROM AEROPUERTO A\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE A.Nombre_Aeropuerto LIKE '%Regional%' OR A.Nombre_Aeropuerto LIKE '%Municipal%'\nGROUP BY A.Nombre_Aeropuerto"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué ciudades de origen han tenido un promedio de emisiones de CO2 por vuelo estrictamente superior al promedio global de emisiones de todos los vuelos registrados?",
+        "output": "SELECT CI.CityName, AVG(R.co2) AS Promedio_CO2\nFROM CIUDAD CI\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY CI.CityName\nHAVING AVG(R.co2) > (SELECT AVG(co2) FROM RESULTADO WHERE co2 IS NOT NULL)"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muéstrame los fabricantes que tienen registrados más de 5 modelos de avión diferentes en el sistema.",
+        "output": "SELECT Fabricante, COUNT(acft_icao) AS Total_Modelos\nFROM MODELO_DE_AVION\nGROUP BY Fabricante\nHAVING COUNT(acft_icao) > 5"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos operados por alguna aerolínea perteneciente a la alianza 'Oneworld' sufrieron un desvío y además tuvieron un retraso de salida igual o mayor a 15 minutos?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Total_Vuelos\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN ALIANZA ALI ON AL.ID_ALIANZA = ALI.ID_ALIANZA\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE ALI.Nombre_Alianza = 'Oneworld' AND R.Diverted = 1 AND DR.DepDel15 = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos despegaron y aterrizaron exactamente dentro del mismo estado? (Es decir, su estado de origen es el mismo que su estado de destino).",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Vuelos_Internos_Estado\nFROM VUELO V\nINNER JOIN AEROPUERTO AO ON V.OriginAirportID = AO.AirportID\nINNER JOIN CIUDAD CIO ON AO.CityMarketID = CIO.CityMarketID\nINNER JOIN AEROPUERTO AD ON V.DestAirportID = AD.AirportID\nINNER JOIN CIUDAD CID ON AD.CityMarketID = CID.CityMarketID\nWHERE CIO.ID_Estado = CID.ID_Estado"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos programados para despegar en el primer semestre (meses del 1 al 6) terminaron quemando más de 5000 unidades de combustible?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Alto_Consumo\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.Month BETWEEN 1 AND 6 AND R.fuel_burn > 5000"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es la ruta exacta (nombre del aeropuerto de origen y nombre del aeropuerto de destino) que más combustible ha consumido en su sumatoria total?",
+        "output": "SELECT TOP 1 AO.Nombre_Aeropuerto AS Origen, AD.Nombre_Aeropuerto AS Destino, SUM(R.fuel_burn) AS Consumo_Total\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AEROPUERTO AO ON V.OriginAirportID = AO.AirportID\nINNER JOIN AEROPUERTO AD ON V.DestAirportID = AD.AirportID\nGROUP BY AO.Nombre_Aeropuerto, AD.Nombre_Aeropuerto\nORDER BY Consumo_Total DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime la cantidad de vuelos que tienen un tiempo de despegue real reportado (DepTime no es nulo) pero que misteriosamente fueron marcados como cancelados al final.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Cancelados_Con_Despegue\nFROM VUELO V\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nWHERE CR.DepTime IS NOT NULL AND R.Cancelled = 1"
+    },
+    # --- NUEVA TANDA 3/5: PORCENTAJES, CALIDAD DE DATOS Y CRUCES 3D ---
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el porcentaje de vuelos que tuvieron un retraso de llegada de 15 minutos o más (ArrDel15) para cada aerolínea, mostrando las 5 peores.",
+        "output": "SELECT TOP 5 AL.Operating_Airline, CAST(SUM(CASE WHEN DR.ArrDel15 = 1 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(R.ID_Resultado) * 100 AS Porcentaje_Retraso\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nGROUP BY AL.Operating_Airline\nORDER BY Porcentaje_Retraso DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime el promedio de emisiones de CO2 específicamente para los aviones fabricados por 'AIRBUS' que despegaron desde el estado de 'California'.",
+        "output": "SELECT AVG(R.co2) AS Promedio_CO2_Airbus_CA\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE E.StateName = 'California' AND MA.Fabricante = 'AIRBUS'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Encuentra todos los vuelos anómalos donde la suma del tiempo de rodaje en pista (TaxiIn + TaxiOut) fue estrictamente mayor que el tiempo real que el avión pasó volando en el aire (AirTime).",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Vuelos_Mucho_Rodaje\nFROM VUELO V\nINNER JOIN TAXI TX ON V.ID_Vuelo = TX.ID_Vuelo\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nWHERE (TX.TaxiIn + TX.TaxiOut) > CR.AirTime"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuáles son las aerolíneas cuyo promedio de retraso en la salida (DepDelayMinutes) es menor al promedio de retraso de salida global de toda la industria?",
+        "output": "SELECT AL.Operating_Airline, AVG(DR.DepDelayMinutes) AS Retraso_Promedio\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nGROUP BY AL.Operating_Airline\nHAVING AVG(DR.DepDelayMinutes) < (SELECT AVG(DepDelayMinutes) FROM DETALLE_RETRASOS WHERE DepDelayMinutes IS NOT NULL)"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos operó en total la alianza comercial 'SkyTeam' durante el mes de diciembre usando exclusivamente aviones de 2 motores?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN ALIANZA ALI ON AL.ID_ALIANZA = ALI.ID_ALIANZA\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE ALI.Nombre_Alianza = 'SkyTeam' AND P.Month = 12 AND MA.Num_Motores = 2"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Identifica los vuelos problemáticos en los datos: aquellos que NO fueron cancelados, pero que tienen un registro nulo o vacío en su columna de emisiones de CO2.",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Sin_Datos_CO2\nFROM RESULTADO R\nWHERE R.Cancelled = 0 AND R.co2 IS NULL"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muestra las rutas exactas (Ciudad de Origen y Ciudad de Destino) que han operado estrictamente más de 50 vuelos en total en toda la base de datos.",
+        "output": "SELECT CIO.CityName AS Ciudad_Origen, CID.CityName AS Ciudad_Destino, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AEROPUERTO AO ON V.OriginAirportID = AO.AirportID\nINNER JOIN CIUDAD CIO ON AO.CityMarketID = CIO.CityMarketID\nINNER JOIN AEROPUERTO AD ON V.DestAirportID = AD.AirportID\nINNER JOIN CIUDAD CID ON AD.CityMarketID = CID.CityMarketID\nGROUP BY CIO.CityName, CID.CityName\nHAVING COUNT(V.ID_Vuelo) > 50"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál fue el mes del año que registró el mayor promedio de minutos de retraso en la llegada (ArrDelayMinutes) considerando todos los vuelos?",
+        "output": "SELECT TOP 1 P.Month, AVG(DR.ArrDelayMinutes) AS Promedio_Retraso\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nGROUP BY P.Month\nORDER BY Promedio_Retraso DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Compara el consumo de combustible: muéstrame el promedio de gasolina quemada agrupado por la cantidad de motores que tiene el avión (Num_Motores).",
+        "output": "SELECT MA.Num_Motores, AVG(R.fuel_burn) AS Promedio_Combustible\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE R.fuel_burn IS NOT NULL AND MA.Num_Motores IS NOT NULL\nGROUP BY MA.Num_Motores"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula la cantidad total de vuelos que fueron operados durante un fin de semana (días 6 o 7) por aerolíneas que pertenecen a la red de 'United Air Lines'.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Vuelos_Fin_Semana\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN RED_DE_AEROLINEAS RA ON AL.ID_Red = RA.ID_Red\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.DayOfWeek IN (6, 7) AND RA.Marketing_Airline_Network = 'United Air Lines'"
+    },
+    # --- NUEVA TANDA 4/5: RATIOS DE EFICIENCIA, EXCLUSIONES GEOGRÁFICAS Y NULLIF ---
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Lista todos los aeropuertos (por nombre) que han funcionado como origen de al menos un vuelo, pero que NUNCA han recibido un vuelo como destino en toda la base de datos.",
+        "output": "SELECT DISTINCT AO.Nombre_Aeropuerto\nFROM AEROPUERTO AO\nINNER JOIN VUELO V ON AO.AirportID = V.OriginAirportID\nWHERE AO.AirportID NOT IN (SELECT DISTINCT DestAirportID FROM VUELO WHERE DestAirportID IS NOT NULL)"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula la eficiencia de velocidad promedio: divide el tiempo de vuelo en el aire (AirTime) entre la distancia de la ruta (Distance) para el modelo de avión 'Airbus A320 Neo Jet'.",
+        "output": "SELECT AVG(CR.AirTime / NULLIF(RU.Distance, 0)) AS Eficiencia_Velocidad\nFROM CRONOMETRIA_REAL CR\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nINNER JOIN RUTA RU ON P.RutaID = RU.RutaID\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE MA.Modelo = 'Airbus A320 Neo Jet'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos en total fueron operados por aviones cuya matrícula (Tail Number) termina exactamente con las letras 'HA'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Vuelos_Matricula_HA\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nWHERE AN.Tail_Number LIKE '%HA'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Genera un reporte por aerolínea mostrando dos columnas: el total de vuelos que fueron cancelados y el total de vuelos que sufrieron retraso al despegar (DepDel15 = 1).",
+        "output": "SELECT AL.Operating_Airline,\n    SUM(CASE WHEN R.Cancelled = 1 THEN 1 ELSE 0 END) AS Total_Cancelados,\n    SUM(CASE WHEN DR.DepDel15 = 1 THEN 1 ELSE 0 END) AS Total_Retrasados_Salida\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nGROUP BY AL.Operating_Airline"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime la cantidad de vuelos programados exclusivamente para el día 15 de cualquier mes, agrupados por el nombre de la red de aerolíneas que los comercializa.",
+        "output": "SELECT RA.Marketing_Airline_Network, COUNT(V.ID_Vuelo) AS Vuelos_Dia_15\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN RED_DE_AEROLINEAS RA ON AL.ID_Red = RA.ID_Red\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.DayOfMonth = 15\nGROUP BY RA.Marketing_Airline_Network"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el total de combustible consumido por trimestre (Quarter) para los vuelos operados por la alianza comercial 'Star Alliance'?",
+        "output": "SELECT P.Quarter, SUM(R.fuel_burn) AS Combustible_Trimestral\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN ALIANZA ALI ON AL.ID_ALIANZA = ALI.ID_ALIANZA\nWHERE ALI.Nombre_Alianza = 'Star Alliance'\nGROUP BY P.Quarter"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Quiero saber la cantidad total de vuelos realizados por aeronaves de categoría súper pesada (peso máximo de despegue estrictamente mayor a 200,000 libras).",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Vuelos_Super_Pesados\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE MA.Peso_Maximo_Despegue_lbs > 200000"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Encuentra todos los vuelos que no fueron cancelados, pero que tienen un error de registro donde su tiempo real de llegada (ArrTime) es nulo.",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Con_Error_ArrTime\nFROM RESULTADO R\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nWHERE R.Cancelled = 0 AND CR.ArrTime IS NULL"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el total de la huella de carbono para vuelos de larga distancia (ruta mayor a 2000 millas) operados por aviones que tienen 3 motores o más.",
+        "output": "SELECT SUM(R.co2) AS Total_CO2_Larga_Distancia_Pesados\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nINNER JOIN RUTA RU ON P.RutaID = RU.RutaID\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE RU.Distance > 2000 AND MA.Num_Motores >= 3"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos despegaron desde alguna ciudad cuyo nombre comience exactamente con la palabra 'San ' (incluyendo el espacio)?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Vuelos_Desde_San\nFROM VUELO V\nINNER JOIN AEROPUERTO A ON V.OriginAirportID = A.AirportID\nINNER JOIN CIUDAD CI ON A.CityMarketID = CI.CityMarketID\nWHERE CI.CityName LIKE 'San %'"
+    },
+    # --- NUEVA TANDA 5/5: AGRUPACIÓN COMPUESTA, UMBRALES SEVEROS Y CIERRE ESTRUCTURAL ---
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muéstrame el consumo de combustible promedio agrupado tanto por aerolínea operadora como por fabricante del avión.",
+        "output": "SELECT AL.Operating_Airline, MA.Fabricante, AVG(R.fuel_burn) AS Promedio_Combustible\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nGROUP BY AL.Operating_Airline, MA.Fabricante"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué vuelos (dame el ID_Vuelo) de 'Delta Air Lines' tuvieron un retraso de salida estrictamente superior al retraso de salida promedio de toda la base de datos?",
+        "output": "SELECT V.ID_Vuelo\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Delta Air Lines' AND DR.DepDelayMinutes > (SELECT AVG(DepDelayMinutes) FROM DETALLE_RETRASOS WHERE DepDelayMinutes IS NOT NULL)"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el total de vuelos que despegaron desde un aeropuerto ubicado en el estado de 'New York' y que aterrizaron en un aeropuerto en 'Florida'.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AEROPUERTO AO ON V.OriginAirportID = AO.AirportID\nINNER JOIN CIUDAD CIO ON AO.CityMarketID = CIO.CityMarketID\nINNER JOIN ESTADO EO ON CIO.ID_Estado = EO.ID_Estado\nINNER JOIN AEROPUERTO AD ON V.DestAirportID = AD.AirportID\nINNER JOIN CIUDAD CID ON AD.CityMarketID = CID.CityMarketID\nINNER JOIN ESTADO ED ON CID.ID_Estado = ED.ID_Estado\nWHERE EO.StateName = 'New York' AND ED.StateName = 'Florida'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime el porcentaje exacto de vuelos desviados para las aerolíneas que pertenecen a la alianza 'SkyTeam'.",
+        "output": "SELECT CAST(SUM(CASE WHEN R.Diverted = 1 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(R.ID_Resultado) * 100 AS Porcentaje_Desviados\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN ALIANZA ALI ON AL.ID_ALIANZA = ALI.ID_ALIANZA\nWHERE ALI.Nombre_Alianza = 'SkyTeam'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuáles son los 10 aeropuertos de destino que acumulan la mayor cantidad de vuelos que llegaron con retrasos severos (ArrDelayMinutes mayor a 60)?",
+        "output": "SELECT TOP 10 A.Nombre_Aeropuerto, COUNT(V.ID_Vuelo) AS Vuelos_Retraso_Severo\nFROM AEROPUERTO A\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE DR.ArrDelayMinutes > 60\nGROUP BY A.Nombre_Aeropuerto\nORDER BY Vuelos_Retraso_Severo DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué modelos de avión (Fabricante y Modelo) operaron vuelos durante el mes de noviembre que terminaron siendo cancelados?",
+        "output": "SELECT DISTINCT MA.Fabricante, MA.Modelo\nFROM MODELO_DE_AVION MA\nINNER JOIN AERONAVE AN ON MA.acft_icao = AN.acft_icao\nINNER JOIN VUELO V ON AN.Tail_Number = V.Tail_Number\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.Month = 11 AND R.Cancelled = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Suma total de la huella de carbono generada por vuelos en los que el tiempo de rodaje de salida (TaxiOut) fue de más de 45 minutos.",
+        "output": "SELECT SUM(R.co2) AS Emisiones_Alto_Rodaje\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN TAXI TX ON V.ID_Vuelo = TX.ID_Vuelo\nWHERE TX.TaxiOut > 45"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime la cantidad de vuelos que fueron comercializados bajo el código IATA 'AA' pero que utilizaron aviones con 4 motores.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN RED_DE_AEROLINEAS RA ON AL.ID_Red = RA.ID_Red\nWHERE RA.IATA_Code_Marketing_Airline = 'AA' AND MA.Num_Motores = 4"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de distancia recorrida por los aviones de la alianza comercial con ID 1 durante el segundo trimestre (Quarter = 2)?",
+        "output": "SELECT AVG(RU.Distance) AS Promedio_Distancia\nFROM RUTA RU\nINNER JOIN PROGRAMACION P ON RU.RutaID = P.RutaID\nINNER JOIN RESULTADO R ON P.ID_Programacion = R.ID_Programacion\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.ID_ALIANZA = 1 AND P.Quarter = 2"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Lista las 3 ciudades de destino con el menor consumo total de combustible reportado (excluyendo los registros donde no hay datos de combustible), considerando solo vuelos de 'United Air Lines'.",
+        "output": "SELECT TOP 3 CI.CityName, SUM(R.fuel_burn) AS Consumo_Total\nFROM CIUDAD CI\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE R.fuel_burn IS NOT NULL AND AL.Operating_Airline = 'United Air Lines'\nGROUP BY CI.CityName\nORDER BY Consumo_Total ASC"
+    },
+    # --- TANDA NIVEL EXAMEN FINAL: CTEs, FUNCIONES DE VENTANA Y MANEJO DE NULOS ---
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el promedio de combustible consumido por vuelo, pero si el registro de combustible está vacío o es nulo, asume que el valor fue 0 para que no se altere el peso del cálculo.",
+        "output": "SELECT AVG(COALESCE(R.fuel_burn, 0)) AS Promedio_Combustible_Ajustado\nFROM RESULTADO R"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Para cada fabricante de aviones, dime cuál es el modelo exacto que ha realizado la mayor cantidad de vuelos.",
+        "output": "WITH ConteoModelos AS (\n    SELECT MA.Fabricante, MA.Modelo, COUNT(V.ID_Vuelo) AS Total_Vuelos,\n    ROW_NUMBER() OVER (PARTITION BY MA.Fabricante ORDER BY COUNT(V.ID_Vuelo) DESC) AS RN\n    FROM MODELO_DE_AVION MA\n    INNER JOIN AERONAVE AN ON MA.acft_icao = AN.acft_icao\n    INNER JOIN VUELO V ON AN.Tail_Number = V.Tail_Number\n    GROUP BY MA.Fabricante, MA.Modelo\n)\nSELECT Fabricante, Modelo, Total_Vuelos\nFROM ConteoModelos\nWHERE RN = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Lista el top 3 de los aeropuertos con más vuelos de salida de forma independiente dentro de cada estado.",
+        "output": "WITH RankingAeropuertos AS (\n    SELECT E.StateName, A.Nombre_Aeropuerto, COUNT(V.ID_Vuelo) AS Total_Salidas,\n    DENSE_RANK() OVER (PARTITION BY E.StateName ORDER BY COUNT(V.ID_Vuelo) DESC) AS Rango\n    FROM ESTADO E\n    INNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\n    INNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\n    INNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\n    GROUP BY E.StateName, A.Nombre_Aeropuerto\n)\nSELECT StateName, Nombre_Aeropuerto, Total_Salidas\nFROM RankingAeropuertos\nWHERE Rango <= 3"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime qué aerolíneas operan más aviones distintos que el promedio global de aviones por aerolínea en toda la base de datos.",
+        "output": "WITH FlotaAerolinea AS (\n    SELECT AL.Operating_Airline, COUNT(DISTINCT AN.Tail_Number) AS Total_Aviones\n    FROM AERONAVE AN\n    INNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\n    GROUP BY AL.Operating_Airline\n)\nSELECT Operating_Airline, Total_Aviones\nFROM FlotaAerolinea\nWHERE Total_Aviones > (SELECT AVG(Total_Aviones) FROM FlotaAerolinea)"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula la suma total de los minutos de retraso (salida más llegada). Si un vuelo no tiene registro en alguno de los dos, asume de forma segura que es 0 para que la suma matemática no falle.",
+        "output": "SELECT SUM(ISNULL(DR.DepDelayMinutes, 0) + ISNULL(DR.ArrDelayMinutes, 0)) AS Retraso_Total_Global\nFROM DETALLE_RETRASOS DR"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Encuentra el mes con la peor eficiencia operativa, entendida como la mayor cantidad de vuelos cancelados o desviados sumados en un solo mes.",
+        "output": "WITH AnomaliasMensuales AS (\n    SELECT P.Month, SUM(CASE WHEN R.Cancelled = 1 OR R.Diverted = 1 THEN 1 ELSE 0 END) AS Total_Anomalias\n    FROM RESULTADO R\n    INNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\n    GROUP BY P.Month\n)\nSELECT TOP 1 Month, Total_Anomalias\nFROM AnomaliasMensuales\nORDER BY Total_Anomalias DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame una lista de matrículas de aeronaves y el nombre de su modelo. Si la aeronave no tiene ningún modelo registrado en el sistema, muestra el texto 'Sin Modelo' en lugar de un valor vacío.",
+        "output": "SELECT AN.Tail_Number, COALESCE(MA.Modelo, 'Sin Modelo') AS Modelo_Asignado\nFROM AERONAVE AN\nLEFT JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el porcentaje exacto de contribución de emisiones de CO2 de cada fabricante respecto al total absoluto de emisiones globales de todos los fabricantes.",
+        "output": "WITH EmisionesFabricante AS (\n    SELECT MA.Fabricante, SUM(R.co2) AS Total_CO2\n    FROM RESULTADO R\n    INNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\n    INNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\n    INNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\n    GROUP BY MA.Fabricante\n)\nSELECT Fabricante, Total_CO2, (Total_CO2 / (SELECT SUM(Total_CO2) FROM EmisionesFabricante)) * 100 AS Porcentaje_Global\nFROM EmisionesFabricante"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el vuelo específico (ID_Vuelo) con el mayor tiempo en el aire (AirTime) dentro de cada grupo de distancia (DistanceGroup)?",
+        "output": "WITH VuelosPorDistancia AS (\n    SELECT RU.DistanceGroup, V.ID_Vuelo, CR.AirTime,\n    ROW_NUMBER() OVER (PARTITION BY RU.DistanceGroup ORDER BY CR.AirTime DESC) AS RN\n    FROM RUTA RU\n    INNER JOIN PROGRAMACION P ON RU.RutaID = P.RutaID\n    INNER JOIN RESULTADO R ON P.ID_Programacion = R.ID_Programacion\n    INNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\n    INNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\n    WHERE CR.AirTime IS NOT NULL\n)\nSELECT DistanceGroup, ID_Vuelo, AirTime\nFROM VuelosPorDistancia\nWHERE RN = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Para cada alianza de aerolíneas, calcula el promedio de consumo de combustible. Si un vuelo no tiene datos de combustible, trátalo como 0. Ordena los resultados de mayor a menor consumo.",
+        "output": "SELECT ALI.Nombre_Alianza, AVG(COALESCE(R.fuel_burn, 0)) AS Promedio_Combustible_Ajustado\nFROM ALIANZA ALI\nINNER JOIN AEROLINEA AL ON ALI.ID_ALIANZA = AL.ID_ALIANZA\nINNER JOIN AERONAVE AN ON AL.DOT_ID_Operating_Airline = AN.DOT_ID_Operating_Airline\nINNER JOIN VUELO V ON AN.Tail_Number = V.Tail_Number\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY ALI.Nombre_Alianza\nORDER BY Promedio_Combustible_Ajustado DESC"
+    },
+    # -------------------------------------------------------
+    # GRUPO 1: VUELOS DE SALIDA POR ESTADO (OriginAirportID)
+    # El patrón más crítico — el que el modelo confunde
+    # -------------------------------------------------------
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos despegaron desde un aeropuerto ubicado en el estado de 'Texas'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos salieron desde el estado de 'Florida'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Florida'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos partieron desde aeropuertos del estado de 'New York'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'New York'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el total de vuelos que despegaron desde 'California'.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'California'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos se operaron desde aeropuertos en el estado de 'Illinois'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Illinois'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos salieron desde el estado de 'Georgia'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Georgia'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué cantidad de vuelos salieron desde aeropuertos en 'Nevada'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Nevada'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime cuántos vuelos partieron desde el estado de 'Washington'.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Washington'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos en total salieron desde el estado de 'Colorado'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Colorado'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos despegaron de aeropuertos en el estado de 'Arizona'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Arizona'"
+    },
+ 
+    # -------------------------------------------------------
+    # GRUPO 2: VUELOS DE LLEGADA POR ESTADO (DestAirportID)
+    # -------------------------------------------------------
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos aterrizaron en aeropuertos del estado de 'Texas'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos llegaron a aeropuertos del estado de 'Florida'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'Florida'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el total de vuelos que aterrizaron en 'California'.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'California'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos tuvieron como destino un aeropuerto del estado de 'New York'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'New York'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos recibió el estado de 'Illinois' en todos sus aeropuertos?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'Illinois'"
+    },
+ 
+    # -------------------------------------------------------
+    # GRUPO 3: MÉTRICAS DE COMBUSTIBLE Y CO2 POR ESTADO
+    # -------------------------------------------------------
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuánto combustible en total consumieron los vuelos que salieron desde 'Texas'?",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Total\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuánto CO2 emitieron en total los vuelos que despegaron desde 'California'?",
+        "output": "SELECT SUM(R.co2) AS Total_CO2\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'California'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de consumo de combustible por vuelo en los que salieron desde 'Florida'?",
+        "output": "SELECT AVG(R.fuel_burn) AS Promedio_Combustible\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Florida'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime el total de emisiones de CO2 generadas por vuelos que llegaron a 'New York'.",
+        "output": "SELECT SUM(R.co2) AS Total_CO2\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'New York'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuánto combustible gastaron en total los vuelos con destino en el estado de 'Georgia'?",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Total\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Georgia'"
+    },
+ 
+    # -------------------------------------------------------
+    # GRUPO 4: CANCELACIONES Y RETRASOS POR ESTADO
+    # -------------------------------------------------------
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos fueron cancelados en aeropuertos del estado de 'Texas'?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Cancelados\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Texas' AND R.Cancelled = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos que salieron de 'Florida' tuvieron retraso en la salida?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Con_Retraso\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE E.StateName = 'Florida' AND DR.DepDel15 = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de retraso en llegada de los vuelos que aterrizaron en 'California'?",
+        "output": "SELECT AVG(DR.ArrDelayMinutes) AS Promedio_Retraso\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE E.StateName = 'California'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos desviados tuvieron como origen aeropuertos del estado de 'Illinois'?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Desviados\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Illinois' AND R.Diverted = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos minutos de retraso en salida acumularon en total los vuelos que despegaron de 'New York'?",
+        "output": "SELECT SUM(DR.DepDelayMinutes) AS Total_Minutos_Retraso\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE E.StateName = 'New York'"
+    },
+ 
+    # -------------------------------------------------------
+    # GRUPO 5: RANKINGS DE ESTADOS
+    # -------------------------------------------------------
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el top 5 de estados con más vuelos de salida en total.",
+        "output": "SELECT TOP 5 E.StateName, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nGROUP BY E.StateName\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuáles son los 10 estados que reciben más vuelos como destino?",
+        "output": "SELECT TOP 10 E.StateName, COUNT(V.ID_Vuelo) AS Total_Llegadas\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nGROUP BY E.StateName\nORDER BY Total_Llegadas DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué estado genera más emisiones de CO2 por vuelos de salida? Dame el top 3.",
+        "output": "SELECT TOP 3 E.StateName, SUM(R.co2) AS Total_CO2\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY E.StateName\nORDER BY Total_CO2 DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el estado con mayor consumo total de combustible en vuelos de salida?",
+        "output": "SELECT TOP 1 E.StateName, SUM(R.fuel_burn) AS Consumo_Total\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY E.StateName\nORDER BY Consumo_Total DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué estado tiene el mayor promedio de retraso en llegada de sus vuelos?",
+        "output": "SELECT TOP 1 E.StateName, AVG(DR.ArrDelayMinutes) AS Promedio_Retraso\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nGROUP BY E.StateName\nORDER BY Promedio_Retraso DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muéstrame todos los estados con su cantidad de vuelos de salida, ordenados de mayor a menor.",
+        "output": "SELECT E.StateName, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nGROUP BY E.StateName\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el estado con mayor tasa de cancelación de vuelos?",
+        "output": "SELECT TOP 1 E.StateName,\n    COUNT(R.ID_Resultado) AS Total_Vuelos,\n    SUM(CASE WHEN R.Cancelled = 1 THEN 1 ELSE 0 END) AS Cancelados,\n    CAST(SUM(CASE WHEN R.Cancelled = 1 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(R.ID_Resultado) * 100 AS Tasa_Cancelacion\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY E.StateName\nORDER BY Tasa_Cancelacion DESC"
+    },
+ 
+    # -------------------------------------------------------
+    # GRUPO 6: FILTROS POR AÑO + ESTADO
+    # -------------------------------------------------------
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos salieron desde 'Texas' durante el año 2018?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE E.StateName = 'Texas' AND P.Year = 2018"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos llegaron a 'Florida' en el año 2019?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE E.StateName = 'Florida' AND P.Year = 2019"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos cancelados hubo en 'California' durante el primer trimestre de 2018?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Cancelados\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE E.StateName = 'California' AND P.Year = 2018 AND P.Quarter = 1 AND R.Cancelled = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál fue el consumo total de combustible de vuelos que salieron de 'New York' en 2018?",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Total\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE E.StateName = 'New York' AND P.Year = 2018"
+    },
+ 
+    # -------------------------------------------------------
+    # GRUPO 7: AEROLÍNEA + ESTADO (JOIN COMPLEJO)
+    # -------------------------------------------------------
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos operó 'Delta Air Lines' desde aeropuertos del estado de 'Georgia'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE E.StateName = 'Georgia' AND AL.Operating_Airline = 'Delta Air Lines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos realizó 'Southwest Airlines' con origen en 'Texas'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE E.StateName = 'Texas' AND AL.Operating_Airline = 'Southwest Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuánto CO2 emitió 'American Airlines' en vuelos que salieron de 'Texas'?",
+        "output": "SELECT SUM(R.co2) AS Total_CO2\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE E.StateName = 'Texas' AND AL.Operating_Airline = 'American Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es la aerolínea con más vuelos desde el estado de 'California'?",
+        "output": "SELECT TOP 1 AL.Operating_Airline, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE E.StateName = 'California'\nGROUP BY AL.Operating_Airline\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muéstrame cuántos vuelos operó cada aerolínea desde el estado de 'Florida', ordenados de mayor a menor.",
+        "output": "SELECT AL.Operating_Airline, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE E.StateName = 'Florida'\nGROUP BY AL.Operating_Airline\nORDER BY Total_Vuelos DESC"
+    },
+ 
+    # -------------------------------------------------------
+    # GRUPO 8: VARIANTES DE REDACCIÓN (mismo JOIN, diferente pregunta)
+    # -------------------------------------------------------
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "En 'Texas', ¿cuántos vuelos se operaron en total?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime el número de vuelos con origen en el estado de Texas.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Necesito saber cuántos vuelos tienen como punto de partida un aeropuerto en 'Texas'.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es la cantidad de vuelos que operaron en los aeropuertos de 'Texas'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué tan activo es el estado de 'Texas' en términos de vuelos de salida?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos aviones despegaron de algún aeropuerto en el estado de 'Texas'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos despegaron desde un aeropuerto ubicado en el estado de 'Texas'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos salieron desde el estado de 'Florida'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Florida'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos partieron desde aeropuertos del estado de 'New York'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'New York'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el total de vuelos que despegaron desde 'California'.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'California'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos se operaron desde aeropuertos en el estado de 'Illinois'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Illinois'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos salieron desde el estado de 'Georgia'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Georgia'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué cantidad de vuelos salieron desde aeropuertos en 'Nevada'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Nevada'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime cuántos vuelos partieron desde el estado de 'Washington'.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Washington'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos en total salieron desde el estado de 'Colorado'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Colorado'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos despegaron de aeropuertos en el estado de 'Arizona'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Arizona'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos salieron desde aeropuertos en 'Michigan'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Michigan'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el número de vuelos que despegaron desde el estado de 'Pennsylvania'.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Pennsylvania'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos aviones despegaron de algún aeropuerto en el estado de 'Texas'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime el número de vuelos con origen en el estado de Texas.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Necesito saber cuántos vuelos tienen como punto de partida un aeropuerto en 'Texas'.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "En 'Texas', ¿cuántos vuelos se operaron en total?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es la cantidad de vuelos que operaron en los aeropuertos de 'Texas'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué tan activo es el estado de 'Texas' en términos de vuelos de salida?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos salieron desde el estado de 'Ohio'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Ohio'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos operaron desde aeropuertos en el estado de 'Minnesota'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE E.StateName = 'Minnesota'"
+    },
+
+    # --- A2: Vuelos de llegada por estado (DestAirportID) ---
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos aterrizaron en aeropuertos del estado de 'Texas'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Llegadas\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos llegaron a aeropuertos del estado de 'Florida'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Llegadas\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'Florida'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el total de vuelos que aterrizaron en 'California'.",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Llegadas\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'California'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos tuvieron como destino un aeropuerto del estado de 'New York'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Llegadas\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'New York'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos recibió el estado de 'Illinois' en todos sus aeropuertos?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Llegadas\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'Illinois'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos aterrizaron en el estado de 'Georgia'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Llegadas\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'Georgia'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos llegaron al estado de 'Nevada'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Llegadas\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'Nevada'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos tuvo como destino el estado de 'Washington'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Llegadas\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'Washington'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos aterrizaron en aeropuertos del estado de 'Colorado'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Llegadas\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'Colorado'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos llegaron al estado de 'Arizona'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Llegadas\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE E.StateName = 'Arizona'"
+    },
+
+    # --- A3: Combustible y CO2 por estado ---
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuánto combustible en total consumieron los vuelos que salieron desde 'Texas'?",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Total\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Texas'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuánto CO2 emitieron en total los vuelos que despegaron desde 'California'?",
+        "output": "SELECT SUM(R.co2) AS Total_CO2\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'California'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de consumo de combustible por vuelo de los que salieron desde 'Florida'?",
+        "output": "SELECT AVG(R.fuel_burn) AS Promedio_Combustible\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Florida'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime el total de emisiones de CO2 generadas por vuelos que llegaron a 'New York'.",
+        "output": "SELECT SUM(R.co2) AS Total_CO2\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'New York'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuánto combustible gastaron los vuelos con destino en el estado de 'Georgia'?",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Total\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Georgia'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuánto CO2 generaron los vuelos que salieron de 'Illinois'?",
+        "output": "SELECT SUM(R.co2) AS Total_CO2\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Illinois'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de CO2 por vuelo de los que llegaron a 'Nevada'?",
+        "output": "SELECT AVG(R.co2) AS Promedio_CO2\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Nevada'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el consumo total de combustible de vuelos que salieron de 'Washington'.",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Total\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Washington'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuánto combustible consumieron los vuelos originados en 'Colorado'?",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Total\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Colorado'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el total de emisiones CO2 de vuelos que salieron de 'Arizona'?",
+        "output": "SELECT SUM(R.co2) AS Total_CO2\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Arizona'"
+    },
+
+    # --- A4: Cancelaciones y retrasos por estado ---
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos fueron cancelados en aeropuertos del estado de 'Texas'?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Cancelados\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Texas' AND R.Cancelled = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos que salieron de 'Florida' tuvieron retraso en la salida?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Con_Retraso\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE E.StateName = 'Florida' AND DR.DepDel15 = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de retraso en llegada de los vuelos que aterrizaron en 'California'?",
+        "output": "SELECT AVG(DR.ArrDelayMinutes) AS Promedio_Retraso\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE E.StateName = 'California'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos desviados tuvieron como origen aeropuertos del estado de 'Illinois'?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Desviados\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Illinois' AND R.Diverted = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos minutos de retraso en salida acumularon los vuelos que despegaron de 'New York'?",
+        "output": "SELECT SUM(DR.DepDelayMinutes) AS Total_Minutos_Retraso\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE E.StateName = 'New York'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos cancelados hubo en 'Georgia' en total?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Cancelados\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Georgia' AND R.Cancelled = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos con retraso en la llegada aterrizaron en 'Nevada'?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Con_Retraso\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE E.StateName = 'Nevada' AND DR.ArrDel15 = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos desviados llegaron al estado de 'Washington'?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Desviados\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Washington' AND R.Diverted = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos cancelados salieron desde 'Colorado'?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Cancelados\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE E.StateName = 'Colorado' AND R.Cancelled = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de minutos de retraso en salida de vuelos que despegaron de 'Arizona'?",
+        "output": "SELECT AVG(DR.DepDelayMinutes) AS Promedio_Retraso\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE E.StateName = 'Arizona'"
+    },
+
+    # --- A5: Rankings de estados ---
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el top 5 de estados con más vuelos de salida en total.",
+        "output": "SELECT TOP 5 E.StateName, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nGROUP BY E.StateName\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuáles son los 10 estados que reciben más vuelos como destino?",
+        "output": "SELECT TOP 10 E.StateName, COUNT(V.ID_Vuelo) AS Total_Llegadas\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nGROUP BY E.StateName\nORDER BY Total_Llegadas DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué estado genera más emisiones de CO2 por vuelos de salida? Dame el top 3.",
+        "output": "SELECT TOP 3 E.StateName, SUM(R.co2) AS Total_CO2\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY E.StateName\nORDER BY Total_CO2 DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el estado con mayor consumo total de combustible en vuelos de salida?",
+        "output": "SELECT TOP 1 E.StateName, SUM(R.fuel_burn) AS Consumo_Total\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY E.StateName\nORDER BY Consumo_Total DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué estado tiene el mayor promedio de retraso en llegada de sus vuelos?",
+        "output": "SELECT TOP 1 E.StateName, AVG(DR.ArrDelayMinutes) AS Promedio_Retraso\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nGROUP BY E.StateName\nORDER BY Promedio_Retraso DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muéstrame todos los estados con su cantidad de vuelos de salida, ordenados de mayor a menor.",
+        "output": "SELECT E.StateName, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nGROUP BY E.StateName\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el estado con mayor tasa de cancelación de vuelos de salida?",
+        "output": "SELECT TOP 1 E.StateName,\n    COUNT(R.ID_Resultado) AS Total_Vuelos,\n    SUM(CASE WHEN R.Cancelled = 1 THEN 1 ELSE 0 END) AS Cancelados,\n    CAST(SUM(CASE WHEN R.Cancelled = 1 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(R.ID_Resultado) * 100 AS Tasa_Cancelacion\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY E.StateName\nORDER BY Tasa_Cancelacion DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el estado con mayor consumo promedio de combustible por vuelo de salida?",
+        "output": "SELECT TOP 1 E.StateName, AVG(R.fuel_burn) AS Promedio_Combustible\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY E.StateName\nORDER BY Promedio_Combustible DESC"
+    },
+
+    # --- A6: Filtros año + estado ---
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos salieron desde 'Texas' durante el año 2018?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE E.StateName = 'Texas' AND P.Year = 2018"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos llegaron a 'Florida' en el año 2019?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE E.StateName = 'Florida' AND P.Year = 2019"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos cancelados hubo en 'California' durante el primer trimestre de 2018?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Cancelados\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE E.StateName = 'California' AND P.Year = 2018 AND P.Quarter = 1 AND R.Cancelled = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál fue el consumo total de combustible de vuelos que salieron de 'New York' en 2018?",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Total\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE E.StateName = 'New York' AND P.Year = 2018"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos salieron de 'Georgia' durante el segundo trimestre del año?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE E.StateName = 'Georgia' AND P.Quarter = 2"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos despegaron de 'Illinois' los lunes en 2018?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE E.StateName = 'Illinois' AND P.Year = 2018 AND P.DayOfWeek = 2"
+    },
+
+    # --- A7: Aerolínea + Estado ---
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos operó 'Delta Air Lines' desde aeropuertos del estado de 'Georgia'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE E.StateName = 'Georgia' AND AL.Operating_Airline = 'Delta Air Lines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos realizó 'Southwest Airlines' con origen en 'Texas'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE E.StateName = 'Texas' AND AL.Operating_Airline = 'Southwest Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuánto CO2 emitió 'American Airlines' en vuelos que salieron de 'Texas'?",
+        "output": "SELECT SUM(R.co2) AS Total_CO2\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE E.StateName = 'Texas' AND AL.Operating_Airline = 'American Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es la aerolínea con más vuelos desde el estado de 'California'?",
+        "output": "SELECT TOP 1 AL.Operating_Airline, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE E.StateName = 'California'\nGROUP BY AL.Operating_Airline\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muéstrame cuántos vuelos operó cada aerolínea desde 'Florida', ordenados de mayor a menor.",
+        "output": "SELECT AL.Operating_Airline, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE E.StateName = 'Florida'\nGROUP BY AL.Operating_Airline\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuánto combustible consumió 'United Air Lines' en vuelos originados en 'Illinois'?",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Total\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE E.StateName = 'Illinois' AND AL.Operating_Airline = 'United Air Lines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos cancelados tuvo 'American Airlines' en el estado de 'New York'?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Cancelados\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE E.StateName = 'New York' AND AL.Operating_Airline = 'American Airlines' AND R.Cancelled = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué aerolínea tuvo más vuelos llegando a 'Nevada'?",
+        "output": "SELECT TOP 1 AL.Operating_Airline, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE E.StateName = 'Nevada'\nGROUP BY AL.Operating_Airline\nORDER BY Total_Vuelos DESC"
+    },
+
+    # ============================================================
+    # SECCIÓN B: AEROLÍNEA -> AERONAVE -> VUELO (50 ejemplos)
+    # El JOIN correcto: AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline
+    # ============================================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos en total operó la aerolínea 'American Airlines'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'American Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el total de emisiones de CO2 de vuelos de 'United Air Lines'.",
+        "output": "SELECT SUM(R.co2) AS Total_CO2\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'United Air Lines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de retraso en salida de 'Spirit Air Lines'?",
+        "output": "SELECT AVG(DR.DepDelayMinutes) AS Promedio_Retraso\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Spirit Air Lines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántas aeronaves distintas tiene 'Southwest Airlines' en la base de datos?",
+        "output": "SELECT COUNT(AN.Tail_Number) AS Total_Aeronaves\nFROM AERONAVE AN\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Southwest Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos cancelados tuvo 'Frontier Airlines' en total?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Cancelados\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Frontier Airlines' AND R.Cancelled = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime el consumo total de combustible de 'Alaska Airlines'.",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Total\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Alaska Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos desviados tuvo 'JetBlue Airways' en total?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Desviados\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'JetBlue Airways' AND R.Diverted = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muéstrame el top 5 de aerolíneas con más vuelos operados en total.",
+        "output": "SELECT TOP 5 AL.Operating_Airline, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nGROUP BY AL.Operating_Airline\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de tiempo en aire de los vuelos de 'Hawaiian Airlines'?",
+        "output": "SELECT AVG(CR.AirTime) AS Promedio_AirTime\nFROM CRONOMETRIA_REAL CR\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Hawaiian Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué aerolínea acumuló más minutos de retraso en llegada en toda la historia?",
+        "output": "SELECT TOP 1 AL.Operating_Airline, SUM(DR.ArrDelayMinutes) AS Total_Retraso\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nGROUP BY AL.Operating_Airline\nORDER BY Total_Retraso DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuánto combustible en total consumieron los aviones de 'Envoy Air'?",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Total\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Envoy Air'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es la aerolínea con menor promedio de consumo de combustible por vuelo?",
+        "output": "SELECT TOP 1 AL.Operating_Airline, AVG(R.fuel_burn) AS Promedio_Combustible\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE R.fuel_burn IS NOT NULL\nGROUP BY AL.Operating_Airline\nORDER BY Promedio_Combustible ASC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos en total realizó 'Allegiant Air'?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Allegiant Air'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos operó 'Republic Airline' durante el año 2018?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE AL.Operating_Airline = 'Republic Airline' AND P.Year = 2018"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos con retraso en llegada tuvo 'SkyWest Airlines'?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Con_Retraso\nFROM RESULTADO R\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'SkyWest Airlines' AND DR.ArrDel15 = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame la suma total de minutos de retraso en salida de todos los vuelos de 'American Airlines'.",
+        "output": "SELECT SUM(DR.DepDelayMinutes) AS Total_Minutos\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'American Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos desviados tuvo 'Delta Air Lines' en el año 2018?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Desviados\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE AL.Operating_Airline = 'Delta Air Lines' AND R.Diverted = 1 AND P.Year = 2018"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántas aeronaves distintas opera 'United Air Lines'?",
+        "output": "SELECT COUNT(AN.Tail_Number) AS Total_Aeronaves\nFROM AERONAVE AN\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'United Air Lines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame todas las aerolíneas con la cantidad de vuelos operados, de mayor a menor.",
+        "output": "SELECT AL.Operating_Airline, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nGROUP BY AL.Operating_Airline\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Calcula el porcentaje de cancelación por aerolínea. Muestra las 10 con mayor tasa.",
+        "output": "SELECT TOP 10\n    AL.Operating_Airline,\n    COUNT(R.ID_Resultado) AS Total_Vuelos,\n    SUM(CASE WHEN R.Cancelled = 1 THEN 1 ELSE 0 END) AS Cancelados,\n    CAST(SUM(CASE WHEN R.Cancelled = 1 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(R.ID_Resultado) * 100 AS Porcentaje_Cancelacion\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nGROUP BY AL.Operating_Airline\nORDER BY Porcentaje_Cancelacion DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es la aerolínea con mayor consumo total de combustible?",
+        "output": "SELECT TOP 1 AL.Operating_Airline, SUM(R.fuel_burn) AS Consumo_Total\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE R.fuel_burn IS NOT NULL\nGROUP BY AL.Operating_Airline\nORDER BY Consumo_Total DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué aerolínea generó más CO2 en el año 2018?",
+        "output": "SELECT TOP 1 AL.Operating_Airline, SUM(R.co2) AS Total_CO2\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.Year = 2018\nGROUP BY AL.Operating_Airline\nORDER BY Total_CO2 DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos operó 'Compass Airlines' en total?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Compass Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de peso máximo de despegue de los aviones de 'Delta Air Lines'?",
+        "output": "SELECT AVG(MA.Peso_Maximo_Despegue_lbs) AS Peso_Promedio\nFROM AERONAVE AN\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'Delta Air Lines'"
+    },
+
+    # ============================================================
+    # SECCIÓN C: TEMPORALES Y CRONOMETRÍA (50 ejemplos)
+    # ============================================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿En qué trimestre del año se registraron más vuelos cancelados en total?",
+        "output": "SELECT TOP 1 P.Quarter, COUNT(R.ID_Resultado) AS Total_Cancelados\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE R.Cancelled = 1\nGROUP BY P.Quarter\nORDER BY Total_Cancelados DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos se realizaron por cada día de la semana? Ordena de mayor a menor.",
+        "output": "SELECT P.DayOfWeek, COUNT(R.ID_Resultado) AS Total_Vuelos\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nGROUP BY P.DayOfWeek\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál fue el mes con mayor consumo total de combustible en el año 2018?",
+        "output": "SELECT TOP 1 P.Month, SUM(R.fuel_burn) AS Consumo_Total\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.Year = 2018\nGROUP BY P.Month\nORDER BY Consumo_Total DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿En qué día del mes se producen más retrasos de salida mayores a 15 minutos?",
+        "output": "SELECT TOP 1 P.DayofMonth, COUNT(DR.ID_Detalle_R) AS Total_Retrasos\nFROM DETALLE_RETRASOS DR\nINNER JOIN CRONOMETRIA_REAL CR ON DR.ID_Detalle_R = CR.ID_Detalle_R\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE DR.DepDel15 = 1\nGROUP BY P.DayofMonth\nORDER BY Total_Retrasos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muéstrame el total de emisiones de CO2 agrupadas por trimestre y año, ordenadas cronológicamente.",
+        "output": "SELECT P.Year, P.Quarter, SUM(R.co2) AS Total_CO2\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nGROUP BY P.Year, P.Quarter\nORDER BY P.Year, P.Quarter"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el bloque horario de salida con mayor promedio de retraso al despegar?",
+        "output": "SELECT TOP 1 BH.DepTimeBlk, AVG(DR.DepDelayMinutes) AS Promedio_Retraso\nFROM BLOQUE_HORARIO BH\nINNER JOIN PROGRAMACION P ON BH.ID_Bloque = P.ID_Bloque\nINNER JOIN RESULTADO R ON P.ID_Programacion = R.ID_Programacion\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nGROUP BY BH.DepTimeBlk\nORDER BY Promedio_Retraso DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos se operaron en total cada año? Ordénalos del más reciente al más antiguo.",
+        "output": "SELECT P.Year, COUNT(R.ID_Resultado) AS Total_Vuelos\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nGROUP BY P.Year\nORDER BY P.Year DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos tuvieron un tiempo de rodaje de salida mayor a 30 minutos?",
+        "output": "SELECT COUNT(TX.ID_TAXI) AS Vuelos_TaxiOut_Largo\nFROM TAXI TX\nWHERE TX.TaxiOut > 30"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de tiempo real de vuelo para rutas de más de 1000 millas?",
+        "output": "SELECT AVG(CR.AirTime) AS Promedio_AirTime\nFROM RUTA RU\nINNER JOIN PROGRAMACION P ON RU.RutaID = P.RutaID\nINNER JOIN RESULTADO R ON P.ID_Programacion = R.ID_Programacion\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nWHERE RU.Distance > 1000"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos tuvieron una distancia menor a 500 millas y aun así llegaron con retraso?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Cortos_Con_Retraso\nFROM RUTA RU\nINNER JOIN PROGRAMACION P ON RU.RutaID = P.RutaID\nINNER JOIN RESULTADO R ON P.ID_Programacion = R.ID_Programacion\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE RU.Distance < 500 AND DR.ArrDel15 = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el tiempo promedio en el aire de los vuelos de 'American Airlines'?",
+        "output": "SELECT AVG(CR.AirTime) AS Promedio_AirTime\nFROM CRONOMETRIA_REAL CR\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN AEROLINEA AL ON AN.DOT_ID_Operating_Airline = AL.DOT_ID_Operating_Airline\nWHERE AL.Operating_Airline = 'American Airlines'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el total de tiempo en aire de todos los aviones fabricados por 'AIRBUS'?",
+        "output": "SELECT SUM(CR.AirTime) AS Total_AirTime\nFROM CRONOMETRIA_REAL CR\nINNER JOIN RESULTADO R ON CR.ID_CR = R.ID_CR\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE MA.Fabricante = 'AIRBUS' AND CR.AirTime IS NOT NULL"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos operados por BOEING fueron cancelados en 2018?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Cancelados\nFROM RESULTADO R\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE MA.Fabricante = 'BOEING' AND R.Cancelled = 1 AND P.Year = 2018"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el top 3 de estados destino con más minutos de retraso en llegada los lunes de 2018.",
+        "output": "SELECT TOP 3 E.StateName, SUM(DR.ArrDelayMinutes) AS Total_Retraso\nFROM ESTADO E\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.Year = 2018 AND P.DayOfWeek = 2\nGROUP BY E.StateName\nORDER BY Total_Retraso DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos hubo en total el mes de diciembre de todos los años disponibles?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Total_Vuelos\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.Month = 12"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el mes con más vuelos cancelados en promedio?",
+        "output": "SELECT TOP 1 P.Month, COUNT(R.ID_Resultado) AS Total_Cancelados\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE R.Cancelled = 1\nGROUP BY P.Month\nORDER BY Total_Cancelados DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos se realizaron los viernes (DayOfWeek = 6) en 2018?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Total_Vuelos\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.DayOfWeek = 6 AND P.Year = 2018"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Muéstrame el consumo total de combustible por mes para el año 2018.",
+        "output": "SELECT P.Month, SUM(R.fuel_burn) AS Consumo_Total\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE P.Year = 2018\nGROUP BY P.Month\nORDER BY P.Month"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos tuvieron tiempo de taxi de llegada mayor a 20 minutos?",
+        "output": "SELECT COUNT(TX.ID_TAXI) AS Vuelos_TaxiIn_Largo\nFROM TAXI TX\nWHERE TX.TaxiIn > 20"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál fue el año con mayor cantidad de vuelos desviados?",
+        "output": "SELECT TOP 1 P.Year, COUNT(R.ID_Resultado) AS Total_Desviados\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nWHERE R.Diverted = 1\nGROUP BY P.Year\nORDER BY Total_Desviados DESC"
+    },
+
+    # ============================================================
+    # SECCIÓN D: CADENA COMPLETA CONTINENTE->WAC->ESTADO->CIUDAD->AEROPUERTO (30 ejemplos)
+    # ============================================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos salieron desde aeropuertos en América del Norte?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nWHERE C.Nombre_Continente = 'North America'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuánto combustible consumieron los vuelos que salieron de aeropuertos en Europa?",
+        "output": "SELECT SUM(R.fuel_burn) AS Consumo_Total\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE C.Nombre_Continente = 'Europa'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos llegaron a aeropuertos en Asia?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.DestAirportID\nWHERE C.Nombre_Continente = 'Asia'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el total de CO2 de vuelos originados en Oceanía?",
+        "output": "SELECT SUM(R.co2) AS Total_CO2\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE C.Nombre_Continente = 'Oceania'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos cancelados hubo en vuelos originados en América del Sur?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Cancelados\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE C.Nombre_Continente = 'South America' AND R.Cancelled = 1"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dime el porcentaje de vuelos desviados por cada continente de origen.",
+        "output": "SELECT C.Nombre_Continente,\n    COUNT(R.ID_Resultado) AS Total_Vuelos,\n    SUM(CASE WHEN R.Diverted = 1 THEN 1 ELSE 0 END) AS Desviados,\n    CAST(SUM(CASE WHEN R.Diverted = 1 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(R.ID_Resultado) * 100 AS Porcentaje_Desviados\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nGROUP BY C.Nombre_Continente\nORDER BY Porcentaje_Desviados DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el promedio de retraso en llegada de vuelos que salieron de África?",
+        "output": "SELECT AVG(DR.ArrDelayMinutes) AS Promedio_Retraso\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE C.Nombre_Continente = 'Africa'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué continente tiene más vuelos de salida en total?",
+        "output": "SELECT TOP 1 C.Nombre_Continente, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nGROUP BY C.Nombre_Continente\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos BOEING salieron de América del Norte?",
+        "output": "SELECT COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nINNER JOIN VUELO V ON A.AirportID = V.OriginAirportID\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE C.Nombre_Continente = 'North America' AND MA.Fabricante = 'BOEING'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos estados distintos tiene el continente América del Norte en la base de datos?",
+        "output": "SELECT COUNT(DISTINCT E.ID_Estado) AS Total_Estados\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nWHERE C.Nombre_Continente = 'North America'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos aeropuertos distintos hay en el continente de Europa?",
+        "output": "SELECT COUNT(DISTINCT A.AirportID) AS Total_Aeropuertos\nFROM CONTINENTE C\nINNER JOIN WAC W ON C.Nombre_Continente = W.Nombre_Continente\nINNER JOIN ESTADO E ON W.WAC_ID = E.WAC_ID\nINNER JOIN CIUDAD CI ON E.ID_Estado = CI.ID_Estado\nINNER JOIN AEROPUERTO A ON CI.CityMarketID = A.CityMarketID\nWHERE C.Nombre_Continente = 'Europa'"
+    },
+
+    # ============================================================
+    # SECCIÓN E: CONSULTAS SIMPLES Y COLOQUIALES (20 ejemplos)
+    # ============================================================
+
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos hay en total en la base de datos?",
+        "output": "SELECT COUNT(ID_Vuelo) AS Total_Vuelos\nFROM VUELO"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántas aeronaves distintas hay registradas en el sistema?",
+        "output": "SELECT COUNT(Tail_Number) AS Total_Aeronaves\nFROM AERONAVE"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos modelos de avión distintos hay en la base de datos?",
+        "output": "SELECT COUNT(acft_icao) AS Total_Modelos\nFROM MODELO_DE_AVION"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántas aerolíneas distintas operan en la base de datos?",
+        "output": "SELECT COUNT(DOT_ID_Operating_Airline) AS Total_Aerolineas\nFROM AEROLINEA"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos aeropuertos hay registrados en total?",
+        "output": "SELECT COUNT(AirportID) AS Total_Aeropuertos\nFROM AEROPUERTO"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos continentes están cubiertos en la base de datos?",
+        "output": "SELECT COUNT(Nombre_Continente) AS Total_Continentes\nFROM CONTINENTE"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos estados hay registrados en la base de datos?",
+        "output": "SELECT COUNT(ID_Estado) AS Total_Estados\nFROM ESTADO"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántas ciudades hay en la base de datos?",
+        "output": "SELECT COUNT(CityMarketID) AS Total_Ciudades\nFROM CIUDAD"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame un listado de todos los aeropuertos de la ciudad de 'Chicago' con su código IATA.",
+        "output": "SELECT A.Nombre_Aeropuerto, A.IATA_Code\nFROM AEROPUERTO A\nINNER JOIN CIUDAD CI ON A.CityMarketID = CI.CityMarketID\nWHERE CI.CityName LIKE '%Chicago%'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos tuvieron combustible nulo o sin registrar?",
+        "output": "SELECT COUNT(ID_Resultado) AS Vuelos_Sin_Combustible\nFROM RESULTADO\nWHERE fuel_burn IS NULL"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántas aeronaves no tienen modelo de avión asignado?",
+        "output": "SELECT COUNT(Tail_Number) AS Aeronaves_Sin_Modelo\nFROM AERONAVE\nWHERE acft_icao IS NULL"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos modelos de avión tiene registrados cada fabricante?",
+        "output": "SELECT Fabricante, COUNT(acft_icao) AS Total_Modelos\nFROM MODELO_DE_AVION\nGROUP BY Fabricante\nORDER BY Total_Modelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuáles son los tipos de motor disponibles y cuántos modelos usa cada uno?",
+        "output": "SELECT Tipo_Motor, COUNT(acft_icao) AS Total_Modelos\nFROM MODELO_DE_AVION\nGROUP BY Tipo_Motor\nORDER BY Total_Modelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué aeronave tiene el mayor consumo total de combustible acumulado?",
+        "output": "SELECT TOP 1 V.Tail_Number, SUM(R.fuel_burn) AS Consumo_Total\nFROM VUELO V\nINNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\nWHERE R.fuel_burn IS NOT NULL\nGROUP BY V.Tail_Number\nORDER BY Consumo_Total DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos aeropuertos distintos recibieron vuelos desde el aeropuerto con código 'LAX'?",
+        "output": "SELECT COUNT(DISTINCT V.DestAirportID) AS Destinos_Distintos\nFROM VUELO V\nINNER JOIN AEROPUERTO A ON V.OriginAirportID = A.AirportID\nWHERE A.IATA_Code = 'LAX'"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el par de aeropuertos con más vuelos entre ellos históricamente?",
+        "output": "SELECT TOP 1 O.Nombre_Aeropuerto AS Origen, D.Nombre_Aeropuerto AS Destino, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM VUELO V\nINNER JOIN AEROPUERTO O ON V.OriginAirportID = O.AirportID\nINNER JOIN AEROPUERTO D ON V.DestAirportID = D.AirportID\nGROUP BY O.Nombre_Aeropuerto, D.Nombre_Aeropuerto\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuál es el modelo de avión más eficiente en CO2 por kilómetro recorrido?",
+        "output": "SELECT TOP 1 MA.Fabricante, MA.Modelo,\n    SUM(R.co2) / NULLIF(SUM(RU.Distance), 0) AS CO2_Por_Km\nFROM RESULTADO R\nINNER JOIN PROGRAMACION P ON R.ID_Programacion = P.ID_Programacion\nINNER JOIN RUTA RU ON P.RutaID = RU.RutaID\nINNER JOIN VUELO V ON R.ID_Vuelo = V.ID_Vuelo\nINNER JOIN AERONAVE AN ON V.Tail_Number = AN.Tail_Number\nINNER JOIN MODELO_DE_AVION MA ON AN.acft_icao = MA.acft_icao\nWHERE R.co2 IS NOT NULL AND RU.Distance > 0\nGROUP BY MA.Fabricante, MA.Modelo\nORDER BY CO2_Por_Km ASC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Qué aerolíneas no tuvieron ningún vuelo cancelado en toda la base de datos?",
+        "output": "SELECT AL.Operating_Airline\nFROM AEROLINEA AL\nWHERE AL.DOT_ID_Operating_Airline NOT IN (\n    SELECT DISTINCT AN.DOT_ID_Operating_Airline\n    FROM AERONAVE AN\n    INNER JOIN VUELO V ON AN.Tail_Number = V.Tail_Number\n    INNER JOIN RESULTADO R ON V.ID_Vuelo = R.ID_Vuelo\n    WHERE R.Cancelled = 1\n)"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "Dame el listado de redes de aerolíneas con su cantidad de vuelos, ordenadas de mayor a menor.",
+        "output": "SELECT RA.Marketing_Airline_Network, COUNT(V.ID_Vuelo) AS Total_Vuelos\nFROM RED_DE_AEROLINEAS RA\nINNER JOIN AEROLINEA AL ON RA.ID_Red = AL.ID_Red\nINNER JOIN AERONAVE AN ON AL.DOT_ID_Operating_Airline = AN.DOT_ID_Operating_Airline\nINNER JOIN VUELO V ON AN.Tail_Number = V.Tail_Number\nGROUP BY RA.Marketing_Airline_Network\nORDER BY Total_Vuelos DESC"
+    },
+    {
+        "instruction": INSTRUCCION_MAESTRA,
+        "input": "¿Cuántos vuelos tuvieron retraso de salida Y retraso de llegada al mismo tiempo?",
+        "output": "SELECT COUNT(R.ID_Resultado) AS Vuelos_Doble_Retraso\nFROM RESULTADO R\nINNER JOIN CRONOMETRIA_REAL CR ON R.ID_CR = CR.ID_CR\nINNER JOIN DETALLE_RETRASOS DR ON CR.ID_Detalle_R = DR.ID_Detalle_R\nWHERE DR.DepDel15 = 1 AND DR.ArrDel15 = 1"
+    },
+
+
+]
+
+# ... (Aquí va tu lista de ejemplos que ya tienes) ...
+
+# 1. Obtener la ruta exacta de la carpeta donde está este script (.py)
+ruta_carpeta_actual = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Unir esa carpeta con el nombre del archivo
+ruta_completa = os.path.join(ruta_carpeta_actual, "dataset_ecologistica.jsonl")
+
+# 3. Guardar el archivo en la ruta absoluta
+with open(ruta_completa, 'w', encoding='utf-8') as f:
+    for ejemplo in ejemplos_entrenamiento:
+        json_line = json.dumps(ejemplo, ensure_ascii=False)
+        f.write(json_line + '\n')
+
+print(f"¡Dataset generado con éxito! Se han guardado {len(ejemplos_entrenamiento)} ejemplos en:\n{ruta_completa}")

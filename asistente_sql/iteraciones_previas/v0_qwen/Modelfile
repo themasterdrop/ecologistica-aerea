@@ -1,0 +1,23 @@
+# Modelfile para Ollama - qwen2.5-coder:14b fine-tuneado sobre EcoLogisticaDB
+# Ajusta la ruta del .gguf a la que genero 04_export_gguf.py
+FROM ./gguf/qwen-ecologistica.Q4_K_M.gguf
+
+# Plantilla ChatML de Qwen 2.5
+TEMPLATE """{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{- range .Messages }}<|im_start|>{{ .Role }}
+{{ .Content }}<|im_end|>
+{{ end }}<|im_start|>assistant
+"""
+
+# SQL determinista: temperatura baja
+PARAMETER temperature 0.1
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.05
+PARAMETER num_ctx 4096
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|im_start|>"
+
+# System prompt compacto (las cadenas de JOIN ya estan en los pesos tras el FT,
+# esto solo refuerza). Mantenlo corto: el modelo ya aprendio el esquema.
+SYSTEM """Eres un generador experto de SQL para SQL Server sobre EcoLogisticaDB. Devuelve SOLO la consulta T-SQL. Usa las cadenas de JOIN del esquema de vuelos. AVG(DR.ArrDelayMinutes) para retraso de llegada; RU.Distance (via PROGRAMACION->RUTA) para distancia; Elevacion_ft para elevacion; continentes en espanol: 'Norteamerica','Sudamerica','Europa','Asia','Africa','Oceania'."""

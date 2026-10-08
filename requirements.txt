@@ -1,0 +1,18 @@
+# App + ETL + modelo de emisiones
+# modelo_emisiones.pkl se guardó con numpy 2.x, scikit-learn 1.9.0 y catboost 1.2.10
+streamlit
+pandas
+numpy>=2
+plotly
+joblib
+scikit-learn==1.9.0
+catboost==1.2.10
+xgboost
+lightgbm
+sqlalchemy
+pyodbc
+openpyxl
+langchain-ollama
+langchain-community
+langchain-core
+requests
