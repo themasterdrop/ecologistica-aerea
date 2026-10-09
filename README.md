@@ -15,7 +15,7 @@ Sistema de ingeniería de datos para analizar la **puntualidad** y la **huella d
 | **ETL → SQL Server** | Limpieza, deduplicación y carga de **226,979 vuelos** (BTS, 2018–2020) en `EcoLogisticaDB`: **225,346 vuelos** en un modelo relacional de **18 tablas** normalizado a 3FN (con desnormalización intencional para consultas analíticas). |
 | **Consultas analíticas** | **26 consultas SQL avanzadas** en 5 "misiones": funciones de ventana (`LAG`, `SUM() OVER`, rankings), CTEs, acumulados YTD/MTD y un simulador parametrizado con `DECLARE`. |
 | **Modelo de emisiones** | La columna `fuel_burn` original no tenía relación física con el vuelo, así que se reconstruyó con un estimador basado en la metodología **ICAO (ciclo LTO + crucero)**. Luego se compararon XGBoost, LightGBM y CatBoost: **CatBoost, R² = 0.98**. |
-| **Asistente text-to-SQL ("Ecobot")** | Fine-tuning **QLoRA de Qwen2.5-Coder-14B-Instruct** con Unsloth para traducir preguntas en español a T-SQL sobre el esquema real. Exportado a GGUF (Q4_K_M) y servido con **Ollama**, sin depender de APIs externas. |
+| **Asistente text-to-SQL ("Ecobot")** | Fine-tuning **QLoRA de Qwen2.5-Coder-14B-Instruct** con Unsloth para traducir preguntas en español a T-SQL sobre el esquema real. Exportado a GGUF (Q4_K_M), publicado en [Ollama](https://ollama.com/peru_01_02/qwen-ecologistica) y servido en local, sin depender de APIs externas. |
 | **App Streamlit** | 5 módulos: Dashboard Operativo, Panel EcoLogístico, Simulador Predictivo, Misiones de Análisis y Ecobot. |
 
 ## Arquitectura
@@ -110,11 +110,12 @@ pip install -r requirements.txt
    python etl/etl_ecologistica.py        # crea las 18 tablas y carga los datos
    python etl/corregir_bi_emisiones.py   # reconstrucción física de combustible y CO₂
    ```
-2. **Asistente IA.** Los pesos del modelo final (GGUF Q4_K_M de 8.7 GB) no están en el repositorio. Con el archivo `qwen-ecologistica-14b.Q4_K_M.gguf` copiado en `asistente_sql/ollama/`, regístralo en Ollama:
+2. **Asistente IA.** El modelo afinado está publicado en Ollama ([peru_01_02/qwen-ecologistica](https://ollama.com/peru_01_02/qwen-ecologistica)):
    ```powershell
-   ollama create qwen-ecologistica:14b -f asistente_sql/ollama/Modelfile
+   ollama pull peru_01_02/qwen-ecologistica:14b
+   $env:ECO_OLLAMA_MODEL = "peru_01_02/qwen-ecologistica:14b"
    ```
-   También puedes regenerarlo desde cero con `asistente_sql/reentrenar_v2.sh` (ver más abajo).
+   Se puede probar directamente con `ollama run peru_01_02/qwen-ecologistica:14b "Top 10 aerolíneas con mayor retraso promedio"`. Si tienes el archivo GGUF, también puedes registrarlo localmente con `ollama create qwen-ecologistica:14b -f asistente_sql/ollama/Modelfile`, o regenerarlo desde cero con `asistente_sql/reentrenar_v2.sh`.
 3. **App.**
    ```powershell
    python scripts/verificar_entorno.py   # opcional: revisa dependencias y el .pkl
@@ -149,7 +150,7 @@ El modelo final se entrenó en una RTX 5080 (Blackwell, `sm_120`), con PyTorch 2
 | `airports.csv.gz` | [OurAirports](https://ourairports.com/data/) |
 | `aircraft_data.xlsx` | FAA *Aircraft Characteristics Database* (hoja `ACD_Data`) |
 
-Los pesos del modelo (GGUF de 8.7 GB) y el adaptador LoRA no están en el repositorio por su tamaño; se pueden regenerar con los scripts de `asistente_sql/`.
+Los pesos del modelo (GGUF Q4_K_M, ~9 GB) no están en el repositorio por su tamaño: se descargan desde [Ollama](https://ollama.com/peru_01_02/qwen-ecologistica) o se regeneran con los scripts de `asistente_sql/`.
 
 ## Equipo y mi aporte
 
