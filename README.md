@@ -84,6 +84,8 @@ Fuente: [`emisiones/reporte_modelo_emisiones.json`](emisiones/reporte_modelo_emi
 │   ├── 04_export_gguf.py, 05_deploy_ollama.sh
 │   ├── 06_eval.py, 07_eval_sqlserver.py, 08_validar_db_viva.py
 │   ├── reentrenar_v2.sh          # pipeline completo de reentrenamiento (WSL2)
+│   ├── PLAN.md                   # decisiones técnicas del fine-tuning (QLoRA, VRAM, cuantización)
+│   ├── requirements-ft.txt       # entorno exacto del entrenamiento
 │   ├── datos/                    # train_v2.jsonl (616) / val_v2.jsonl (64)
 │   ├── ollama/Modelfile
 │   └── iteraciones_previas/      # v0 y v1 con Qwen, y el primer intento con Llama 3 8B
@@ -131,13 +133,13 @@ pip install -r requirements.txt
 
 ### Reentrenar el asistente
 
-Desde WSL2, con el entorno de Unsloth (ver `asistente_sql/01_setup_wsl2.sh`):
+Desde WSL2, con el entorno de Unsloth (ver `asistente_sql/01_setup_wsl2.sh` y las decisiones de diseño en [`asistente_sql/PLAN.md`](asistente_sql/PLAN.md)):
 
 ```bash
 bash asistente_sql/reentrenar_v2.sh
 ```
 
-El modelo final se entrenó en una RTX 5080 (Blackwell, `sm_120`), que requiere PyTorch nightly con CUDA 12.8. El script regenera el dataset, lo valida contra el DDL, entrena el QLoRA, exporta a GGUF, registra el modelo en Ollama y prueba las consultas que antes fallaban.
+El modelo final se entrenó en una RTX 5080 (Blackwell, `sm_120`), con PyTorch 2.11 y CUDA 12.8 (`cu128`); el entorno exacto está en `asistente_sql/requirements-ft.txt`. El script regenera el dataset, lo valida contra el DDL, entrena el QLoRA, exporta a GGUF, registra el modelo en Ollama y prueba las consultas que antes fallaban.
 
 ## Datos
 
